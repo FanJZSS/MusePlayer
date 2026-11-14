@@ -2,10 +2,13 @@ package com.muse.player.data
 
 import android.content.ContentUris
 import android.content.Context
+import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class MediaRepository(private val context: Context) {
 
@@ -72,5 +75,115 @@ class MediaRepository(private val context: Context) {
             // 权限缺失或 MediaStore 异常时返回空列表
         }
         result
+    }
+
+    /**
+     * 扫描外部存储中以 "." 开头的系统隐藏目录（如 .secret、.hidden）内的视频。
+     * MediaStore 不会索引这类文件，只能通过文件系统遍历获取。
+     * Android 11+ 需要“所有文件访问权限”，否则目录不可读，返回空列表。
+     */
+    suspend fun loadHiddenVideos(): List<VideoItem> = withContext(Dispatchers.IO) {
+        val result = ArrayList<VideoItem>()
+        val budget = intArrayOf(MAX_SCAN_ENTRIES)
+        for (root in externalRoots()) {
+            scanDir(root, depth = 0, insideHidden = false, budget = budget, out = result)
+            if (budget[0] <= 0) break
+        }
+        result
+    }
+
+    private fun externalRoots(): List<File> {
+        val roots = LinkedHashSet<File>()
+        try {
+            Environment.getExternalStorageDirectory()?.takeIf { it.exists() }?.let { roots += it }
+        } catch (_: Exception) {
+        }
+        try {
+            context.getExternalFilesDirs(null).filterNotNull().forEach { appDir ->
+                var dir: File? = appDir
+                while (dir != null && dir.name != "Android") dir = dir.parentFile
+                dir?.parentFile?.takeIf { it.exists() }?.let { roots += it }
+            }
+        } catch (_: Exception) {
+        }
+        return roots.toList()
+    }
+
+    private fun scanDir(
+        dir: File,
+        depth: Int,
+        insideHidden: Boolean,
+        budget: IntArray,
+        out: MutableList<VideoItem>
+    ) {
+        if (depth > MAX_SCAN_DEPTH || budget[0] <= 0) return
+        val children = try {
+            dir.listFiles()
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        for (file in children) {
+            if (budget[0]-- <= 0) return
+            try {
+                if (file.isDirectory) {
+                    val name = file.name
+                    // 跳过系统应用数据与缩略图缓存等无意义目录
+                    if (depth == 0 && name == "Android") continue
+                    if (name in SKIP_DIRS) continue
+                    scanDir(
+                        dir = file,
+                        depth = depth + 1,
+                        insideHidden = insideHidden || name.startsWith("."),
+                        budget = budget,
+                        out = out
+                    )
+                } else if (insideHidden || file.name.startsWith(".")) {
+                    if (file.length() > 0L && file.extension.lowercase() in VIDEO_EXTENSIONS) {
+                        out += file.toHiddenVideoItem()
+                    }
+                }
+            } catch (_: Exception) {
+                // 单个文件或目录不可读时跳过
+            }
+        }
+    }
+
+    private fun File.toHiddenVideoItem(): VideoItem {
+        val absolute = absolutePath
+        return VideoItem(
+            id = negativeId(absolute),
+            uri = Uri.fromFile(this),
+            title = name.substringBeforeLast('.').ifBlank { name },
+            path = absolute,
+            durationMs = 0L,
+            size = length(),
+            dateAdded = lastModified(),
+            bucketId = "hidden:${parentFile?.absolutePath ?: absolute}",
+            bucketName = parentFile?.name?.ifBlank { "隐藏文件夹" } ?: "隐藏文件夹",
+            width = 0,
+            height = 0,
+            mimeType = null
+        )
+    }
+
+    /** 生成稳定的负数 id，避免与 MediaStore 的正数 id 冲突 */
+    private fun negativeId(path: String): Long {
+        var hash = 1125899906842597L
+        for (ch in path) hash = 31 * hash + ch.code
+        return -((hash and Long.MAX_VALUE) + 1)
+    }
+
+    private companion object {
+        const val MAX_SCAN_DEPTH = 5
+        const val MAX_SCAN_ENTRIES = 6000
+        val VIDEO_EXTENSIONS = setOf(
+            "mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "m4v",
+            "ts", "m2ts", "mpg", "mpeg", "3gp", "3g2", "rmvb", "rm", "asf", "vob"
+        )
+        val SKIP_DIRS = setOf(
+            ".thumbnails", ".trashed", ".transforms", ".pending", ".cache",
+            ".temporary", ".temp", ".recycle", ".recycler", ".Trash"
+        )
     }
 }

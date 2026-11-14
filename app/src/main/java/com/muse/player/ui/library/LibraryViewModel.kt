@@ -39,6 +39,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
 
     private var allVideos: List<VideoItem> = emptyList()
+    private var lastShowSystemHidden = SettingsRepository.state.value.showSystemHiddenFolders
 
     init {
         viewModelScope.launch {
@@ -54,7 +55,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                         showHiddenFolders = settings.showHiddenFolders
                     )
                 }
-                rebuild()
+                val systemHiddenChanged = settings.showSystemHiddenFolders != lastShowSystemHidden
+                lastShowSystemHidden = settings.showSystemHiddenFolders
+                if (systemHiddenChanged) refresh() else rebuild()
             }
         }
         refresh()
@@ -63,7 +66,18 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun refresh() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true) }
-            allVideos = repository.loadVideos()
+            val visible = repository.loadVideos()
+            val hidden = if (SettingsRepository.state.value.showSystemHiddenFolders) {
+                repository.loadHiddenVideos()
+            } else {
+                emptyList()
+            }
+            allVideos = if (hidden.isEmpty()) {
+                visible
+            } else {
+                val existingPaths = visible.mapNotNullTo(HashSet()) { it.path }
+                visible + hidden.filter { it.path !in existingPaths }
+            }
             rebuild()
             _state.update { it.copy(loading = false) }
         }

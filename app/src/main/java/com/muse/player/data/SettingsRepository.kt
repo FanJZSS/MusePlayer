@@ -12,7 +12,8 @@ data class AppSettings(
     val backgroundPlay: Boolean = false, // 离开播放器后继续播放
     val autoSubtitles: Boolean = true,   // 自动加载同名字幕
     val showHiddenFolders: Boolean = false, // 是否显示已隐藏文件夹
-    val hiddenFolders: Set<String> = emptySet() // 被隐藏的文件夹 bucketId
+    val hiddenFolders: Set<String> = emptySet(), // 被隐藏的文件夹 bucketId
+    val showSystemHiddenFolders: Boolean = false // 是否扫描并显示以 . 开头的系统隐藏文件夹
 )
 
 object SettingsRepository {
@@ -30,7 +31,8 @@ object SettingsRepository {
             backgroundPlay = sp.getBoolean("background_play", false),
             autoSubtitles = sp.getBoolean("auto_subtitles", true),
             showHiddenFolders = sp.getBoolean("show_hidden_folders", false),
-            hiddenFolders = sp.getStringSet("hidden_folders", emptySet())?.toSet() ?: emptySet()
+            hiddenFolders = sp.getStringSet("hidden_folders", emptySet())?.toSet() ?: emptySet(),
+            showSystemHiddenFolders = sp.getBoolean("show_system_hidden_folders", false)
         )
     }
 
@@ -69,5 +71,10 @@ object SettingsRepository {
 
     fun toggleFolderHidden(bucketId: String) {
         setFolderHidden(bucketId, bucketId !in _state.value.hiddenFolders)
+    }
+
+    fun setShowSystemHiddenFolders(value: Boolean) {
+        sp.edit().putBoolean("show_system_hidden_folders", value).apply()
+        _state.value = _state.value.copy(showSystemHiddenFolders = value)
     }
 }

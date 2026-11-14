@@ -3,6 +3,8 @@ package com.muse.player.ui.library
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -111,6 +113,7 @@ fun LibraryScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var hasPermission by remember { mutableStateOf(MediaPermissions.granted(context)) }
+    var allFilesAccess by remember { mutableStateOf(hasAllFilesAccess()) }
     var showSearch by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showOverflow by remember { mutableStateOf(false) }
@@ -137,6 +140,14 @@ fun LibraryScreen(
                 if (granted != hasPermission) {
                     hasPermission = granted
                     if (granted) viewModel.refresh()
+                }
+                // 从系统设置授予“所有文件访问权限”返回后，重新扫描系统隐藏目录
+                val allFiles = hasAllFilesAccess()
+                if (allFiles != allFilesAccess) {
+                    allFilesAccess = allFiles
+                    if (allFiles && SettingsRepository.state.value.showSystemHiddenFolders) {
+                        viewModel.refresh()
+                    }
                 }
             }
         }
@@ -696,3 +707,6 @@ private fun openAppSettings(context: Context) {
     )
     context.startActivity(intent)
 }
+
+private fun hasAllFilesAccess(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()

@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import com.muse.player.data.PlayEntry
@@ -61,11 +62,57 @@ class PlayerActivity : ComponentActivity() {
             )
             return
         }
+
+        // 其他应用通过 muse://play?url=... 调起
         val data = intent.data
-        if (intent.action == Intent.ACTION_VIEW && data != null) {
-            val title = queryDisplayName(data) ?: data.lastPathSegment ?: "视频"
-            viewModel.start(listOf(PlayEntry(uri = data.toString(), title = title)), 0, 0L)
+        if (intent.action == Intent.ACTION_VIEW && data != null && data.scheme == SCHEME_MUSE) {
+            val url = data.getQueryParameter("url") ?: data.getQueryParameter("src")
+            if (!url.isNullOrBlank()) {
+                val title = data.getQueryParameter("title")
+                    ?: url.substringAfterLast('/').substringBefore('?').ifBlank { "网络串流" }
+                viewModel.start(
+                    listOf(PlayEntry(uri = url, title = title, isNetwork = true)),
+                    0,
+                    0L
+                )
+            }
+            return
         }
+
+        // 其他应用通过“分享”或“打开方式”传入的视频
+        val streamUris = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            )
+
+            Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(
+                intent, Intent.EXTRA_STREAM, Uri::class.java
+            ) ?: emptyList()
+
+            else -> emptyList()
+        }
+        val sharedUris = (streamUris + clipDataUris(intent)).distinctBy { it.toString() }
+        if (sharedUris.isNotEmpty()) {
+            viewModel.start(buildEntries(sharedUris), 0, 0L)
+            return
+        }
+
+        if (intent.action == Intent.ACTION_VIEW && data != null) {
+            viewModel.start(buildEntries(listOf(data)), 0, 0L)
+        }
+    }
+
+    private fun clipDataUris(intent: Intent): List<Uri> {
+        val clip = intent.clipData ?: return emptyList()
+        return (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+    }
+
+    private fun buildEntries(uris: List<Uri>): List<PlayEntry> = uris.map { uri ->
+        val raw = queryDisplayName(uri) ?: uri.lastPathSegment ?: "视频"
+        PlayEntry(
+            uri = uri.toString(),
+            title = raw.substringBeforeLast('.').ifBlank { raw }
+        )
     }
 
     private fun queryDisplayName(uri: Uri): String? = try {
@@ -114,5 +161,6 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_ENTRIES = "extra_entries"
         const val EXTRA_INDEX = "extra_index"
         const val EXTRA_POSITION = "extra_position"
+        private const val SCHEME_MUSE = "muse"
     }
 }
