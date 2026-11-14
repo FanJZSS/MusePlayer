@@ -24,6 +24,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -260,33 +262,48 @@ fun PlayerScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
 
-        if (state.connected) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        useController = false
-                        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                        setShutterBackgroundColor(android.graphics.Color.BLACK)
-                        player = viewModel.player
-                    }
-                },
-                update = { view ->
-                    view.player = viewModel.player
-                    view.resizeMode = when (state.aspectMode) {
-                        1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                        2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                        else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(scaleX = zoom, scaleY = zoom)
-            )
-        } else {
-            androidx.compose.material3.CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = Color.White
-            )
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            val ratio = aspectRatioFor(state.aspectMode)
+            val videoModifier = if (ratio == null) {
+                Modifier.fillMaxSize()
+            } else {
+                val screenRatio = maxWidth / maxHeight
+                if (ratio >= screenRatio) {
+                    Modifier.width(maxWidth).height(maxWidth / ratio)
+                } else {
+                    Modifier.height(maxHeight).width(maxHeight * ratio)
+                }
+            }
+            if (state.connected) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            useController = false
+                            setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                            setShutterBackgroundColor(android.graphics.Color.BLACK)
+                            player = viewModel.player
+                        }
+                    },
+                    update = { view ->
+                        view.player = viewModel.player
+                        view.resizeMode = when (state.aspectMode) {
+                            1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                    },
+                    modifier = videoModifier
+                        .graphicsLayer(scaleX = zoom, scaleY = zoom)
+                )
+            } else {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color.White
+                )
+            }
         }
 
         // 手势层
@@ -859,6 +876,36 @@ fun PlayerScreen(
                     zoom = 1f
                     showAspectSheet = false
                 }
+                SheetOption("16:9 宽屏", state.aspectMode == 3) {
+                    viewModel.setAspectMode(3)
+                    zoom = 1f
+                    showAspectSheet = false
+                }
+                SheetOption("4:3 经典", state.aspectMode == 4) {
+                    viewModel.setAspectMode(4)
+                    zoom = 1f
+                    showAspectSheet = false
+                }
+                SheetOption("3:2 相机", state.aspectMode == 5) {
+                    viewModel.setAspectMode(5)
+                    zoom = 1f
+                    showAspectSheet = false
+                }
+                SheetOption("1:1 方形", state.aspectMode == 6) {
+                    viewModel.setAspectMode(6)
+                    zoom = 1f
+                    showAspectSheet = false
+                }
+                SheetOption("9:16 竖屏（抖音）", state.aspectMode == 7) {
+                    viewModel.setAspectMode(7)
+                    zoom = 1f
+                    showAspectSheet = false
+                }
+                SheetOption("21:9 超宽", state.aspectMode == 8) {
+                    viewModel.setAspectMode(8)
+                    zoom = 1f
+                    showAspectSheet = false
+                }
                 SheetOption("重置缩放", false) {
                     zoom = 1f
                     showAspectSheet = false
@@ -875,6 +922,17 @@ private fun SheetTitle(title: String) {
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
     )
+}
+
+/** 固定画面比例：0 适应、1 裁剪、2 拉伸，3 起为具体比例 */
+private fun aspectRatioFor(mode: Int): Float? = when (mode) {
+    3 -> 16f / 9f
+    4 -> 4f / 3f
+    5 -> 3f / 2f
+    6 -> 1f
+    7 -> 9f / 16f
+    8 -> 21f / 9f
+    else -> null
 }
 
 @Composable
