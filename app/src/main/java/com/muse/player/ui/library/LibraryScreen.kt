@@ -80,6 +80,8 @@ import com.muse.player.data.PlayEntry
 import com.muse.player.data.SettingsRepository
 import com.muse.player.data.SortField
 import com.muse.player.data.VideoItem
+import com.muse.player.ui.network.NetworkTab
+import com.muse.player.ui.network.NetworkViewModel
 import com.muse.player.ui.player.PlayerLauncher
 import com.muse.player.util.MediaPermissions
 import com.muse.player.util.formatDate
@@ -88,7 +90,11 @@ import com.muse.player.util.formatSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(navController: NavController, viewModel: LibraryViewModel) {
+fun LibraryScreen(
+    navController: NavController,
+    viewModel: LibraryViewModel,
+    networkViewModel: NetworkViewModel
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -127,7 +133,7 @@ fun LibraryScreen(navController: NavController, viewModel: LibraryViewModel) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    if (!hasPermission) {
+    if (!hasPermission && state.tab != 3) {
         PermissionScreen(
             onRequest = {
                 permissionLauncher.launch(
@@ -135,7 +141,8 @@ fun LibraryScreen(navController: NavController, viewModel: LibraryViewModel) {
                         listOfNotNull(MediaPermissions.notificationPermission())
                 )
             },
-            onOpenSettings = { openAppSettings(context) }
+            onOpenSettings = { openAppSettings(context) },
+            onBrowseNetwork = { viewModel.setTab(3) }
         )
         return
     }
@@ -291,7 +298,7 @@ fun LibraryScreen(navController: NavController, viewModel: LibraryViewModel) {
                 selectedTabIndex = state.tab,
                 containerColor = MaterialTheme.colorScheme.background
             ) {
-                listOf("视频", "文件夹", "历史").forEachIndexed { index, title ->
+                listOf("视频", "文件夹", "历史", "网络").forEachIndexed { index, title ->
                     Tab(
                         selected = state.tab == index,
                         onClick = { viewModel.setTab(index) },
@@ -369,7 +376,7 @@ fun LibraryScreen(navController: NavController, viewModel: LibraryViewModel) {
                     }
                 }
 
-                else -> {
+                2 -> {
                     if (state.history.isEmpty()) {
                         EmptyState("暂无播放记录", "播放过的视频会出现在这里")
                     } else {
@@ -408,6 +415,16 @@ fun LibraryScreen(navController: NavController, viewModel: LibraryViewModel) {
                             }
                         }
                     }
+                }
+
+                else -> {
+                    NetworkTab(
+                        viewModel = networkViewModel,
+                        onOpenServer = { server ->
+                            networkViewModel.openServer(server)
+                            navController.navigate("network_browser")
+                        }
+                    )
                 }
             }
         }
@@ -454,7 +471,11 @@ private fun LoadingBox() {
 }
 
 @Composable
-private fun PermissionScreen(onRequest: () -> Unit, onOpenSettings: () -> Unit) {
+private fun PermissionScreen(
+    onRequest: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onBrowseNetwork: (() -> Unit)? = null
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -482,6 +503,11 @@ private fun PermissionScreen(onRequest: () -> Unit, onOpenSettings: () -> Unit) 
         }
         TextButton(onClick = onOpenSettings) {
             Text("前往系统设置")
+        }
+        if (onBrowseNetwork != null) {
+            TextButton(onClick = onBrowseNetwork) {
+                Text("局域网浏览")
+            }
         }
     }
 }

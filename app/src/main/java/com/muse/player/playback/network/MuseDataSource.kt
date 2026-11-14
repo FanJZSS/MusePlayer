@@ -1,0 +1,205 @@
+package com.muse.player.playback.network
+
+import android.content.Context
+import android.net.Uri
+import androidx.annotation.OptIn
+import androidx.media3.common.C
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.BaseDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import com.muse.player.data.network.NetworkClients
+import com.muse.player.data.network.NetworkRepository
+import com.muse.player.data.network.NetworkServer
+import com.muse.player.data.network.ServerType
+import jcifs.SmbConstants
+import jcifs.smb.SmbRandomAccessFile
+import org.apache.commons.net.ftp.FTP
+import org.apache.commons.net.ftp.FTPClient
+import java.io.IOException
+import java.io.InputStream
+
+/**
+ * 支持局域网协议（SMB / FTP / WebDAV）的 Media3 数据源。
+ *
+ * 自定义 scheme 只携带服务器 id 与相对路径，凭据从本地配置读取；
+ * 三种协议都支持随机定位，因此远程视频可以正常拖动进度。
+ */
+@OptIn(UnstableApi::class)
+class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork = */ true) {
+
+    private var uri: Uri? = null
+    private var bytesRemaining: Long = C.LENGTH_UNSET.toLong()
+
+    private var smbFile: SmbRandomAccessFile? = null
+    private var smbContext: jcifs.CIFSContext? = null
+    private var ftpClient: FTPClient? = null
+    private var ftpStream: InputStream? = null
+    private var httpDataSource: DefaultHttpDataSource? = null
+    private var fallback: DataSource? = null
+
+    override fun open(dataSpec: DataSpec): Long {
+        closeQuietly()
+        transferInitializing(dataSpec)
+        uri = dataSpec.uri
+        val resolved = NetworkRepository.resolve(dataSpec.uri)
+        if (resolved == null) {
+            val delegate = DefaultDataSource.Factory(context).createDataSource()
+            fallback = delegate
+            val length = delegate.open(dataSpec)
+            transferStarted(dataSpec)
+            return length
+        }
+
+        val (server, relativePath) = resolved
+        try {
+            when (server.type) {
+                ServerType.SMB -> openSmb(server, relativePath, dataSpec)
+                ServerType.FTP -> openFtp(server, relativePath, dataSpec)
+                ServerType.WEBDAV -> openWebDav(server, relativePath, dataSpec)
+            }
+        } catch (e: IOException) {
+            closeQuietly()
+            throw e
+        }
+        transferStarted(dataSpec)
+        return bytesRemaining
+    }
+
+    private fun openSmb(server: NetworkServer, relativePath: String, dataSpec: DataSpec) {
+        val context = NetworkClients.smbContext(server)
+        smbContext = context
+        val url = NetworkRepository.smbUrl(server, relativePath, directory = false)
+        val file = SmbRandomAccessFile(url, "r", SmbConstants.DEFAULT_SHARING, context)
+        smbFile = file
+        val total = file.length()
+        val position = dataSpec.position.coerceAtLeast(0L)
+        file.seek(position)
+        bytesRemaining = when {
+            dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
+            total > 0 -> (total - position).coerceAtLeast(0L)
+            else -> C.LENGTH_UNSET.toLong()
+        }
+    }
+
+    private fun openFtp(server: NetworkServer, relativePath: String, dataSpec: DataSpec) {
+        val client = FTPClient()
+        ftpClient = client
+        client.connect(server.host, server.port)
+        client.setAutodetectUTF8(true)
+        val user = server.username.ifBlank { "anonymous" }
+        val pass = if (server.username.isBlank()) "anonymous@" else server.password
+        if (!client.login(user, pass)) {
+            throw IOException("FTP 登录失败，请检查账号密码")
+        }
+        client.enterLocalPassiveMode()
+        client.setFileType(FTP.BINARY_FILE_TYPE)
+
+        val position = dataSpec.position.coerceAtLeast(0L)
+        val total = runCatching {
+            client.listFiles(relativePath)
+                ?.firstOrNull { !it.isDirectory }
+                ?.size
+                ?: -1L
+        }.getOrDefault(-1L)
+
+        if (position > 0) {
+            client.setRestartOffset(position)
+        }
+        val input = client.retrieveFileStream(relativePath)
+            ?: throw IOException("FTP 无法打开文件：$relativePath")
+        ftpStream = input
+        bytesRemaining = when {
+            dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
+            total > position -> total - position
+            else -> C.LENGTH_UNSET.toLong()
+        }
+    }
+
+    private fun openWebDav(server: NetworkServer, relativePath: String, dataSpec: DataSpec) {
+        val url = NetworkRepository.webDavUrl(server, relativePath, directory = false)
+        val factory = DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(30_000)
+            .setAllowCrossProtocolRedirects(true)
+        NetworkRepository.basicAuthHeader(server)?.let {
+            factory.setDefaultRequestProperties(mapOf("Authorization" to it))
+        }
+        val http = factory.createDataSource()
+        httpDataSource = http
+        val httpSpec = dataSpec.buildUpon()
+            .setUri(Uri.parse(url))
+            .setKey(url)
+            .build()
+        val length = http.open(httpSpec)
+        bytesRemaining = if (length == C.LENGTH_UNSET.toLong()) {
+            C.LENGTH_UNSET.toLong()
+        } else {
+            length
+        }
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (length == 0) return 0
+        if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
+
+        val maxRead = if (bytesRemaining == C.LENGTH_UNSET.toLong()) {
+            length
+        } else {
+            minOf(length.toLong(), bytesRemaining).toInt()
+        }
+        if (maxRead <= 0) return C.RESULT_END_OF_INPUT
+
+        val count = when {
+            smbFile != null -> smbFile!!.read(buffer, offset, maxRead)
+            ftpStream != null -> ftpStream!!.read(buffer, offset, maxRead)
+            httpDataSource != null -> httpDataSource!!.read(buffer, offset, maxRead)
+            fallback != null -> fallback!!.read(buffer, offset, maxRead)
+            else -> C.RESULT_END_OF_INPUT
+        }
+        if (count == C.RESULT_END_OF_INPUT) return C.RESULT_END_OF_INPUT
+        if (count > 0) {
+            if (bytesRemaining != C.LENGTH_UNSET.toLong()) {
+                bytesRemaining -= count
+            }
+            bytesTransferred(count)
+        }
+        return count
+    }
+
+    override fun close() {
+        closeQuietly()
+        transferEnded()
+    }
+
+    private fun closeQuietly() {
+        runCatching { smbFile?.close() }
+        smbFile = null
+        runCatching { smbContext?.close() }
+        smbContext = null
+
+        runCatching { ftpStream?.close() }
+        ftpStream = null
+        ftpClient?.let { client ->
+            runCatching { client.completePendingCommand() }
+            runCatching { if (client.isConnected) client.logout() }
+            runCatching { if (client.isConnected) client.disconnect() }
+        }
+        ftpClient = null
+
+        runCatching { httpDataSource?.close() }
+        httpDataSource = null
+        runCatching { fallback?.close() }
+        fallback = null
+
+        bytesRemaining = C.LENGTH_UNSET.toLong()
+    }
+
+    override fun getUri(): Uri? = uri
+
+    class Factory(private val context: Context) : DataSource.Factory {
+        override fun createDataSource(): DataSource = MuseDataSource(context)
+    }
+}

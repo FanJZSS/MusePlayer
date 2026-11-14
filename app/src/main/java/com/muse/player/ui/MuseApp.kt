@@ -8,22 +8,35 @@ import androidx.navigation.compose.rememberNavController
 import com.muse.player.ui.library.FolderScreen
 import com.muse.player.ui.library.LibraryScreen
 import com.muse.player.ui.library.LibraryViewModel
+import com.muse.player.ui.network.NetworkBrowserScreen
+import com.muse.player.ui.network.NetworkViewModel
 import com.muse.player.ui.settings.SettingsScreen
 
 @Composable
 fun MuseApp() {
     val navController = rememberNavController()
     val libraryViewModel: LibraryViewModel = viewModel()
+    val networkViewModel: NetworkViewModel = viewModel()
 
     NavHost(navController = navController, startDestination = "library") {
         composable("library") {
-            LibraryScreen(navController = navController, viewModel = libraryViewModel)
+            LibraryScreen(
+                navController = navController,
+                viewModel = libraryViewModel,
+                networkViewModel = networkViewModel
+            )
         }
         composable("folder/{bucketId}") { entry ->
             FolderScreen(
                 navController = navController,
                 viewModel = libraryViewModel,
                 bucketId = entry.arguments?.getString("bucketId").orEmpty()
+            )
+        }
+        composable("network_browser") {
+            NetworkBrowserScreen(
+                navController = navController,
+                viewModel = networkViewModel
             )
         }
         composable("settings") {

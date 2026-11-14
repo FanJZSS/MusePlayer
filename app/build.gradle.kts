@@ -78,5 +78,10 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // 局域网协议：SMB / FTP / WebDAV
+    implementation("eu.agno3.jcifs:jcifs-ng:2.1.10")
+    implementation("commons-net:commons-net:3.11.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
