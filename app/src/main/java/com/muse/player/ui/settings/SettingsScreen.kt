@@ -268,10 +268,10 @@ private fun SeekSensitivityControl() {
             onValueChangeFinished = {
                 SettingsRepository.setSeekGestureSeconds(seconds.toInt())
             },
-            valueRange = 60f..600f
+            valueRange = 60f..1800f
         )
         Text(
-            text = "数值越大，滑动同样距离调节的时间越长；默认 180 秒，最大 600 秒",
+            text = "数值越大，滑动同样距离调节的时间越长；默认 180 秒，最大 1800 秒（30 分钟）",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -83,7 +83,7 @@ object SettingsRepository {
     }
 
     fun setSeekGestureSeconds(value: Int) {
-        val safe = value.coerceIn(60, 600)
+        val safe = value.coerceIn(60, 1800)
         sp.edit().putInt("seek_gesture_seconds", safe).apply()
         _state.value = _state.value.copy(seekGestureSeconds = safe)
     }
