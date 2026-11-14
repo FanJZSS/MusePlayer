@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.graphics.Bitmap
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.WindowManager
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -85,13 +87,16 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -110,8 +115,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.muse.player.data.SettingsRepository
+import com.muse.player.util.SeekPreviewLoader
 import com.muse.player.util.formatDuration
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
 
@@ -143,6 +150,17 @@ fun PlayerScreen(
     var showAudioSheet by remember { mutableStateOf(false) }
     var showSubtitleSheet by remember { mutableStateOf(false) }
     var showAspectSheet by remember { mutableStateOf(false) }
+
+    // 拖动进度时的画面预览
+    var previewVisible by remember { mutableStateOf(false) }
+    var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var previewTimeMs by remember { mutableStateOf(0L) }
+    var previewBusy by remember { mutableStateOf(false) }
+    val previewScope = rememberCoroutineScope()
+    val previewLoader = remember { SeekPreviewLoader(context) }
+    DisposableEffect(Unit) {
+        onDispose { previewLoader.release() }
+    }
 
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
@@ -367,15 +385,41 @@ fun PlayerScreen(
                         var startBrightness = 0.5f
                         var startVolume = 0
                         var startPosition = 0L
+                        var previewUri: Uri? = null
                         // 全屏宽度滑动可调节的时长，可在设置中调整
                         var seekRangeMs = 120_000L
                         val width = size.width.toFloat().coerceAtLeast(1f)
                         val height = size.height.toFloat().coerceAtLeast(1f)
+
+                        fun seekTarget(): Long {
+                            val duration = viewModel.state.value.durationMs
+                                .takeIf { it > 0 } ?: Long.MAX_VALUE
+                            return (startPosition + (accDx / width * seekRangeMs).toLong())
+                                .coerceIn(0L, duration)
+                        }
+
+                        fun requestPreview(target: Long) {
+                            previewTimeMs = target
+                            previewVisible = true
+                            if (previewBusy) return
+                            val uri = previewUri ?: return
+                            previewBusy = true
+                            previewScope.launch {
+                                val frame = previewLoader.load(uri, target)
+                                if (frame != null && previewVisible) previewBitmap = frame
+                                previewBusy = false
+                            }
+                        }
+
                         detectDragGestures(
                             onDragStart = { offset ->
                                 dragMode = 0
                                 accDx = 0f
                                 accDy = 0f
+                                previewUri = viewModel.player
+                                    ?.currentMediaItem
+                                    ?.localConfiguration
+                                    ?.uri
                                 startBrightness = currentBrightness()
                                 startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                                 startPosition = viewModel.state.value.positionMs
@@ -438,29 +482,29 @@ fun PlayerScreen(
                                     }
 
                                     3 -> {
-                                        val duration = viewModel.state.value.durationMs
-                                            .takeIf { it > 0 } ?: Long.MAX_VALUE
-                                        val target = (startPosition + (accDx / width * seekRangeMs).toLong())
-                                            .coerceIn(0L, duration)
+                                        val target = seekTarget()
                                         gestureHint = GestureHint(
                                             GestureType.SEEK,
                                             "${formatDuration(target)} / ${formatDuration(viewModel.state.value.durationMs)}"
                                         )
+                                        requestPreview(target)
                                     }
                                 }
                             },
                             onDragEnd = {
                                 if (dragMode == 3) {
-                                    val dx = accDx
-                                    val target = startPosition + (dx / width * seekRangeMs).toLong()
-                                    viewModel.seekTo(target)
+                                    viewModel.seekTo(seekTarget())
                                 }
                                 dragMode = 0
                                 gestureHint = null
+                                previewVisible = false
+                                previewBitmap = null
                             },
                             onDragCancel = {
                                 dragMode = 0
                                 gestureHint = null
+                                previewVisible = false
+                                previewBitmap = null
                             }
                         )
                     }
@@ -474,6 +518,36 @@ fun PlayerScreen(
                 color = Color.White,
                 strokeWidth = 3.dp
             )
+        }
+
+        // 拖动进度时的画面预览
+        if (previewVisible) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 80.dp)
+                    .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(10.dp))
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                previewBitmap?.let { frame ->
+                    Image(
+                        bitmap = frame.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .width(180.dp)
+                            .height(101.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                    )
+                }
+                Text(
+                    text = formatDuration(previewTimeMs),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
 
         // 手势提示
