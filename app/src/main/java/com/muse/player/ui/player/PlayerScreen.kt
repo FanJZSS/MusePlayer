@@ -394,7 +394,7 @@ fun PlayerScreen(
                                 }
                                 when (dragMode) {
                                     1 -> {
-                                        val value = (startBrightness - accDy / height * 1.2f)
+                                        val value = (startBrightness - accDy / height * 2.2f)
                                             .coerceIn(0.01f, 1f)
                                         applyBrightness(value)
                                         gestureHint = GestureHint(
@@ -404,7 +404,7 @@ fun PlayerScreen(
                                     }
 
                                     2 -> {
-                                        val value = (startVolume - accDy / height * maxVolume * 1.5f)
+                                        val value = (startVolume - accDy / height * maxVolume * 2.5f)
                                             .toInt().coerceIn(0, maxVolume)
                                         try {
                                             audioManager.setStreamVolume(
