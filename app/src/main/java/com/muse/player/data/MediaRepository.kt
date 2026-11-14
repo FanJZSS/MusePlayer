@@ -2,11 +2,15 @@ package com.muse.player.data
 
 import android.content.ContentUris
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -89,7 +93,12 @@ class MediaRepository(private val context: Context) {
             scanDir(root, depth = 0, insideHidden = false, budget = budget, out = result)
             if (budget[0] <= 0) break
         }
-        result
+        // MediaStore 不索引隐藏目录，时长/分辨率需要逐个读取元数据；分片并发，避免大量隐藏视频时卡住
+        coroutineScope {
+            result.chunked(4).map { chunk ->
+                async { chunk.map { it.withFileMetadata() } }
+            }.awaitAll().flatten()
+        }
     }
 
     private fun externalRoots(): List<File> {
@@ -172,6 +181,31 @@ class MediaRepository(private val context: Context) {
             height = 0,
             mimeType = null
         )
+    }
+
+    /** 读取隐藏视频的时长与分辨率，读取失败时保持 0，不影响展示 */
+    private fun VideoItem.withFileMetadata(): VideoItem {
+        val filePath = path ?: return this
+        if (durationMs > 0L && width > 0 && height > 0) return this
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(filePath)
+            copy(
+                durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull() ?: durationMs,
+                width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                    ?.toIntOrNull() ?: width,
+                height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                    ?.toIntOrNull() ?: height
+            )
+        } catch (_: Exception) {
+            this
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     /** 生成稳定的负数 id，避免与 MediaStore 的正数 id 冲突 */
