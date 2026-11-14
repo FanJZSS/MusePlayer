@@ -17,6 +17,7 @@ data class AppSettings(
     val folderViewMode: Boolean = false, // 媒体库默认展示文件夹视图
     val gridViewMode: Boolean = true, // 视频以网格展示（false 为列表）
     val seekGestureSeconds: Int = 180, // 全屏宽度左右滑动可调节的时长（秒）
+    val longPressSpeed: Float = 2f, // 长按画面临时倍速播放的倍率（最低 2x）
     val decoderMode: Int = 0 // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
 )
 
@@ -40,6 +41,7 @@ object SettingsRepository {
             folderViewMode = sp.getBoolean("folder_view_mode", false),
             gridViewMode = sp.getBoolean("grid_view_mode", true),
             seekGestureSeconds = sp.getInt("seek_gesture_seconds", 180),
+            longPressSpeed = sp.getFloat("long_press_speed", 2f),
             decoderMode = sp.getInt("decoder_mode", 0)
         )
     }
@@ -100,6 +102,13 @@ object SettingsRepository {
         val safe = value.coerceIn(60, 1800)
         sp.edit().putInt("seek_gesture_seconds", safe).apply()
         _state.value = _state.value.copy(seekGestureSeconds = safe)
+    }
+
+    fun setLongPressSpeed(value: Float) {
+        // 支持 2x / 2.5x / 3x / 3.5x / 4x，最低 2x
+        val safe = (kotlin.math.round(value * 2f) / 2f).coerceIn(2f, 4f)
+        sp.edit().putFloat("long_press_speed", safe).apply()
+        _state.value = _state.value.copy(longPressSpeed = safe)
     }
 
     fun setDecoderMode(value: Int) {

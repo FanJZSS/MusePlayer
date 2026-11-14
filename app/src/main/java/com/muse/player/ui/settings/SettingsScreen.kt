@@ -154,6 +154,7 @@ fun SettingsScreen(navController: NavController) {
                 onCheckedChange = SettingsRepository::setAutoSubtitles
             )
             SeekSensitivityControl()
+            LongPressSpeedControl()
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("解码")
@@ -256,6 +257,40 @@ private fun SeekSensitivityControl() {
         )
         Text(
             text = "数值越大，滑动同样距离调节的时间越长；默认 180 秒，最大 1800 秒（30 分钟）",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun LongPressSpeedControl() {
+    val settings by SettingsRepository.state.collectAsStateWithLifecycle()
+    var speed by remember(settings.longPressSpeed) {
+        mutableFloatStateOf(settings.longPressSpeed)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("长按倍速播放", modifier = Modifier.weight(1f))
+            Text(
+                text = if (speed == speed.toInt().toFloat()) "${speed.toInt()}x" else "${speed}x",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = speed,
+            onValueChange = { speed = (kotlin.math.round(it * 2f) / 2f) },
+            onValueChangeFinished = { SettingsRepository.setLongPressSpeed(speed) },
+            valueRange = 2f..4f,
+            steps = 3
+        )
+        Text(
+            text = "长按画面以所选倍速播放，松手恢复原速；默认 2x，最低 2x",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

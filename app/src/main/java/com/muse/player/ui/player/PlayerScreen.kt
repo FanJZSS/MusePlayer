@@ -397,8 +397,13 @@ fun PlayerScreen(
                                 if (!boosting) {
                                     preSpeed = viewModel.state.value.speed
                                     boosting = true
-                                    viewModel.setSpeed(2f)
-                                    gestureHint = GestureHint(GestureType.INFO, "2x 倍速播放")
+                                    // 倍率可在设置中调整，最低 2x
+                                    val boostSpeed = SettingsRepository.state.value.longPressSpeed
+                                    viewModel.setSpeed(boostSpeed)
+                                    gestureHint = GestureHint(
+                                        GestureType.INFO,
+                                        "${formatSpeed(boostSpeed)} 倍速播放"
+                                    )
                                 }
                             },
                             onPress = {
