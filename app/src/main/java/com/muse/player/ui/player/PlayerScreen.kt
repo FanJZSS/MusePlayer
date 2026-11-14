@@ -352,12 +352,24 @@ fun PlayerScreen(
                             onTap = { controlsVisible = !controlsVisible },
                             onDoubleTap = { offset ->
                                 val width = size.width
-                                if (offset.x < width / 2f) {
-                                    viewModel.seekBy(-10_000)
-                                    gestureHint = GestureHint(GestureType.INFO, "后退 10 秒")
-                                } else {
-                                    viewModel.seekBy(10_000)
-                                    gestureHint = GestureHint(GestureType.INFO, "前进 10 秒")
+                                when {
+                                    // 中间区域双击：暂停 / 继续
+                                    offset.x > width * 0.3f && offset.x < width * 0.7f -> {
+                                        val playing = viewModel.state.value.isPlaying
+                                        viewModel.togglePlay()
+                                        gestureHint = GestureHint(
+                                            GestureType.INFO,
+                                            if (playing) "已暂停" else "继续播放"
+                                        )
+                                    }
+                                    offset.x < width / 2f -> {
+                                        viewModel.seekBy(-10_000)
+                                        gestureHint = GestureHint(GestureType.INFO, "后退 10 秒")
+                                    }
+                                    else -> {
+                                        viewModel.seekBy(10_000)
+                                        gestureHint = GestureHint(GestureType.INFO, "前进 10 秒")
+                                    }
                                 }
                             },
                             onLongPress = {
