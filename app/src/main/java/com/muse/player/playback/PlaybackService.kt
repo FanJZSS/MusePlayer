@@ -83,6 +83,34 @@ class PlaybackService : MediaSessionService() {
             val current = player
             if (current == null || current.mediaItemCount == 0) stopSelf()
         }
+
+        // 通知栏播放卡片开关：关闭时移除已有通知，开启时重新创建
+        scope.launch {
+            SettingsRepository.state
+                .map { it.showMediaNotification }
+                .distinctUntilChanged()
+                .collect { show ->
+                    val session = mediaSession ?: return@collect
+                    if (show) {
+                        val p = player
+                        onUpdateNotification(
+                            session,
+                            p?.playWhenReady == true && (p?.mediaItemCount ?: 0) > 0
+                        )
+                    } else {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                    }
+                }
+        }
+    }
+
+    /**
+     * 通知栏播放卡片默认关闭：关闭时不创建通知、也不进入前台服务。
+     * 开启时沿用 Media3 默认的媒体通知。
+     */
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        if (!SettingsRepository.state.value.showMediaNotification) return
+        super.onUpdateNotification(session, startInForegroundRequired)
     }
 
     private fun buildPlayer(): ExoPlayer {

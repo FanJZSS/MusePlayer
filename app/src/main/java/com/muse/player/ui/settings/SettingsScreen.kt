@@ -148,6 +148,12 @@ fun SettingsScreen(navController: NavController) {
                 onCheckedChange = SettingsRepository::setBackgroundPlay
             )
             SwitchRow(
+                title = "通知栏播放卡片",
+                subtitle = "在通知栏和锁屏显示媒体控制卡片；关闭后不显示（部分系统可能限制后台播放）",
+                checked = settings.showMediaNotification,
+                onCheckedChange = SettingsRepository::setShowMediaNotification
+            )
+            SwitchRow(
                 title = "自动加载同名字幕",
                 subtitle = "自动搜索视频所在目录中的 srt / ass / vtt 字幕",
                 checked = settings.autoSubtitles,

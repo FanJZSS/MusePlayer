@@ -48,6 +48,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -71,6 +72,7 @@ import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -79,6 +81,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -101,11 +104,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -114,6 +120,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -154,6 +161,9 @@ fun PlayerScreen(
     var showAudioSheet by remember { mutableStateOf(false) }
     var showSubtitleSheet by remember { mutableStateOf(false) }
     var showAspectSheet by remember { mutableStateOf(false) }
+    var surfaceRotation by remember { mutableIntStateOf(0) }
+    var showCustomRatioDialog by remember { mutableStateOf(false) }
+    val settings by SettingsRepository.state.collectAsStateWithLifecycle()
 
     // 拖动进度时的画面预览
     var previewVisible by remember { mutableStateOf(false) }
@@ -305,15 +315,26 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            val ratio = aspectRatioFor(state.aspectMode)
-            val videoModifier = if (ratio == null) {
+            val rotated = surfaceRotation % 180 != 0
+            val ratio = aspectRatioFor(
+                state.aspectMode,
+                settings.customAspectWidth,
+                settings.customAspectHeight
+            )
+            // 交换宽高时按旋转后的显示区域计算尺寸，画面本身再旋转 90°
+            val displayRatio = when {
+                ratio == null -> null
+                rotated -> 1f / ratio
+                else -> ratio
+            }
+            val videoModifier = if (displayRatio == null) {
                 Modifier.fillMaxSize()
             } else {
                 val screenRatio = maxWidth / maxHeight
-                if (ratio >= screenRatio) {
-                    Modifier.width(maxWidth).height(maxWidth / ratio)
+                if (displayRatio >= screenRatio) {
+                    Modifier.width(maxWidth).height(maxWidth / displayRatio)
                 } else {
-                    Modifier.height(maxHeight).width(maxHeight * ratio)
+                    Modifier.height(maxHeight).width(maxHeight * displayRatio)
                 }
             }
             if (state.connected) {
@@ -335,6 +356,7 @@ fun PlayerScreen(
                         }
                     },
                     modifier = videoModifier
+                        .rotateSurface(surfaceRotation)
                         .graphicsLayer(scaleX = zoom, scaleY = zoom)
                 )
             } else {
@@ -1035,6 +1057,13 @@ fun PlayerScreen(
                     zoom = 1f
                     showAspectSheet = false
                 }
+                SheetOption("自定义比例…", state.aspectMode == 9) {
+                    showCustomRatioDialog = true
+                }
+                SheetOption("交换宽高（仅旋转画面）", surfaceRotation % 180 != 0) {
+                    surfaceRotation = if (surfaceRotation % 180 == 0) 90 else 0
+                    showAspectSheet = false
+                }
                 SheetOption("重置缩放", false) {
                     zoom = 1f
                     showAspectSheet = false
@@ -1042,6 +1071,91 @@ fun PlayerScreen(
             }
         }
     }
+
+    // 自定义画面比例
+    if (showCustomRatioDialog) {
+        var widthText by remember { mutableStateOf(settings.customAspectWidth.toString()) }
+        var heightText by remember { mutableStateOf(settings.customAspectHeight.toString()) }
+        val valid = widthText.toIntOrNull()?.let { it in 1..999 } == true &&
+            heightText.toIntOrNull()?.let { it in 1..999 } == true
+        AlertDialog(
+            onDismissRequest = { showCustomRatioDialog = false },
+            title = { Text("自定义画面比例") },
+            text = {
+                Column {
+                    Text(
+                        text = "输入视频画面的宽高比，例如 16 : 9",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = widthText,
+                            onValueChange = { widthText = it.filter(Char::isDigit).take(3) },
+                            label = { Text("宽") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(":")
+                        OutlinedTextField(
+                            value = heightText,
+                            onValueChange = { heightText = it.filter(Char::isDigit).take(3) },
+                            label = { Text("高") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = valid,
+                    onClick = {
+                        val w = widthText.toIntOrNull() ?: return@TextButton
+                        val h = heightText.toIntOrNull() ?: return@TextButton
+                        SettingsRepository.setCustomAspectRatio(w, h)
+                        viewModel.setAspectMode(9)
+                        zoom = 1f
+                        showCustomRatioDialog = false
+                        showAspectSheet = false
+                    }
+                ) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomRatioDialog = false }) { Text("取消") }
+            }
+        )
+    }
+}
+
+/** 只旋转视频画面（Surface），UI 方向保持不变；90/270 度时交换宽高 */
+private fun Modifier.rotateSurface(degrees: Int): Modifier {
+    if (degrees % 180 == 0) {
+        return this.graphicsLayer { rotationZ = degrees.toFloat() }
+    }
+    return this
+        .layout { measurable, constraints ->
+            val swapped = Constraints(
+                minWidth = constraints.minHeight,
+                maxWidth = constraints.maxHeight,
+                minHeight = constraints.minWidth,
+                maxHeight = constraints.maxWidth
+            )
+            val placeable = measurable.measure(swapped)
+            layout(placeable.height, placeable.width) {
+                placeable.place(
+                    x = -(placeable.width - placeable.height) / 2,
+                    y = -(placeable.height - placeable.width) / 2
+                )
+            }
+        }
+        .graphicsLayer { rotationZ = degrees.toFloat() }
 }
 
 @Composable
@@ -1053,14 +1167,15 @@ private fun SheetTitle(title: String) {
     )
 }
 
-/** 固定画面比例：0 适应、1 裁剪、2 拉伸，3 起为具体比例 */
-private fun aspectRatioFor(mode: Int): Float? = when (mode) {
+/** 固定画面比例：0 适应、1 裁剪、2 拉伸，3 起为具体比例，9 为自定义 */
+private fun aspectRatioFor(mode: Int, customWidth: Int, customHeight: Int): Float? = when (mode) {
     3 -> 16f / 9f
     4 -> 4f / 3f
     5 -> 3f / 2f
     6 -> 1f
     7 -> 9f / 16f
     8 -> 21f / 9f
+    9 -> customWidth.toFloat() / customHeight
     else -> null
 }
 

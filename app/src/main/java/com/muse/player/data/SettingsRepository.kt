@@ -19,6 +19,9 @@ data class AppSettings(
     val seekGestureSeconds: Int = 180, // 全屏宽度左右滑动可调节的时长（秒）
     val longPressSpeed: Float = 2f, // 长按画面临时倍速播放的倍率（最低 2x）
     val doubleTapSeekSeconds: Int = 10, // 双击画面两侧快进/快退的秒数
+    val showMediaNotification: Boolean = false, // 通知栏媒体播放卡片（默认隐藏）
+    val customAspectWidth: Int = 16, // 自定义画面比例的宽
+    val customAspectHeight: Int = 9, // 自定义画面比例的高
     val decoderMode: Int = 0 // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
 )
 
@@ -44,6 +47,9 @@ object SettingsRepository {
             seekGestureSeconds = sp.getInt("seek_gesture_seconds", 180),
             longPressSpeed = sp.getFloat("long_press_speed", 2f),
             doubleTapSeekSeconds = sp.getInt("double_tap_seek_seconds", 10),
+            showMediaNotification = sp.getBoolean("media_notification", false),
+            customAspectWidth = sp.getInt("custom_aspect_width", 16),
+            customAspectHeight = sp.getInt("custom_aspect_height", 9),
             decoderMode = sp.getInt("decoder_mode", 0)
         )
     }
@@ -117,6 +123,21 @@ object SettingsRepository {
         val safe = value.coerceIn(5, 60)
         sp.edit().putInt("double_tap_seek_seconds", safe).apply()
         _state.value = _state.value.copy(doubleTapSeekSeconds = safe)
+    }
+
+    fun setShowMediaNotification(value: Boolean) {
+        sp.edit().putBoolean("media_notification", value).apply()
+        _state.value = _state.value.copy(showMediaNotification = value)
+    }
+
+    fun setCustomAspectRatio(width: Int, height: Int) {
+        val w = width.coerceIn(1, 999)
+        val h = height.coerceIn(1, 999)
+        sp.edit()
+            .putInt("custom_aspect_width", w)
+            .putInt("custom_aspect_height", h)
+            .apply()
+        _state.value = _state.value.copy(customAspectWidth = w, customAspectHeight = h)
     }
 
     fun setDecoderMode(value: Int) {
