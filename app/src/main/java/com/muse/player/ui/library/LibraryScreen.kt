@@ -73,6 +73,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -89,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import androidx.navigation.NavController
 import com.muse.player.data.HistoryEntry
 import com.muse.player.data.HistoryRepository
@@ -194,16 +196,12 @@ fun LibraryScreen(
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val pagerState = rememberPagerState(initialPage = state.tab) { tabs.size }
 
-    // 滑动结束后再同步 tab，避免滑动过程中动画反向抢手势造成卡顿
+    val scope = rememberCoroutineScope()
+
+    // 页码一变化就同步 tab，让导航高亮与内容切换同步
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }.collect { page ->
+        snapshotFlow { pagerState.currentPage }.collect { page ->
             if (page != viewModel.state.value.tab) viewModel.setTab(page)
-        }
-    }
-    LaunchedEffect(state.tab) {
-        // 仅在点击 tab 时触发滚动；用户正在拖动时不打断
-        if (!pagerState.isScrollInProgress && pagerState.currentPage != state.tab) {
-            pagerState.animateScrollToPage(state.tab)
         }
     }
 
@@ -328,7 +326,10 @@ fun LibraryScreen(
                     tabs.forEachIndexed { index, tab ->
                         NavigationRailItem(
                             selected = state.tab == index,
-                            onClick = { viewModel.setTab(index) },
+                            onClick = {
+                                viewModel.setTab(index)
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            },
                             icon = { Icon(tab.icon, contentDescription = tab.title) },
                             label = { Text(tab.title) }
                         )
@@ -369,7 +370,10 @@ fun LibraryScreen(
                     tabs.forEachIndexed { index, tab ->
                         Tab(
                             selected = state.tab == index,
-                            onClick = { viewModel.setTab(index) },
+                            onClick = {
+                                viewModel.setTab(index)
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            },
                             text = { Text(tab.title) }
                         )
                     }
