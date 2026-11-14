@@ -588,10 +588,18 @@ private fun playHistory(entry: HistoryEntry, video: VideoItem?, context: Context
         title = entry.title,
         id = video?.id ?: -1L,
         durationMs = entry.durationMs,
-        path = video?.path
+        path = video?.path,
+        isNetwork = isNetworkUri(entry.uri)
     )
     val resume = if (SettingsRepository.state.value.autoResume) entry.positionMs else 0L
     PlayerLauncher.open(context, listOf(playEntry), 0, resume)
+}
+
+/** 判断历史记录中的地址是否为网络 / 局域网 / 流媒体资源 */
+private fun isNetworkUri(uri: String): Boolean {
+    val scheme = uri.substringBefore(':', "").lowercase()
+    return scheme.startsWith("muse+") ||
+        scheme in setOf("http", "https", "rtsp", "rtmps", "rtmp", "mms", "ftp")
 }
 
 @Composable

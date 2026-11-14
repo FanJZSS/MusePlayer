@@ -370,7 +370,12 @@ fun HistoryRow(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                text = "${formatDuration(entry.positionMs)} / ${formatDuration(entry.durationMs)}",
+                text = if (entry.durationMs > 0) {
+                    "${formatDuration(entry.positionMs)} / ${formatDuration(entry.durationMs)}"
+                } else {
+                    // 网络直播等场景时长未知，只显示已播放位置
+                    formatDuration(entry.positionMs)
+                },
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

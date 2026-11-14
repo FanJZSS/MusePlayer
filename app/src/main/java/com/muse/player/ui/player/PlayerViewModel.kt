@@ -466,7 +466,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val item = controller.currentMediaItem ?: return
         val index = controller.currentMediaItemIndex
         val entry = entries.getOrNull(index)
-        if (entry?.isNetwork == true) return
+        // 网络 / 局域网视频同样写入历史记录，方便下次继续播放
         val uri = item.localConfiguration?.uri?.toString()
             ?: entry?.uri
             ?: return
