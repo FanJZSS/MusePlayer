@@ -123,29 +123,36 @@ class MediaRepository(private val context: Context) {
             null
         } ?: return
 
+        val subDirs = ArrayList<File>(children.size)
         for (file in children) {
-            if (budget[0]-- <= 0) return
             try {
                 if (file.isDirectory) {
-                    val name = file.name
-                    // 跳过系统应用数据与缩略图缓存等无意义目录
-                    if (depth == 0 && name == "Android") continue
-                    if (name in SKIP_DIRS) continue
-                    scanDir(
-                        dir = file,
-                        depth = depth + 1,
-                        insideHidden = insideHidden || name.startsWith("."),
-                        budget = budget,
-                        out = out
-                    )
+                    subDirs += file
                 } else if (insideHidden || file.name.startsWith(".")) {
+                    // 只统计视频候选文件，普通图片/文档不占用扫描预算
                     if (file.length() > 0L && file.extension.lowercase() in VIDEO_EXTENSIONS) {
                         out += file.toHiddenVideoItem()
                     }
                 }
             } catch (_: Exception) {
-                // 单个文件或目录不可读时跳过
+                // 单个文件不可读时跳过
             }
+        }
+
+        // 隐藏目录优先扫描：普通大目录（相机、微信等）日志多，先扫 . 开头的才不会耗尽预算
+        subDirs.sortBy { if (it.name.startsWith(".")) 0 else 1 }
+        for (sub in subDirs) {
+            if (budget[0]-- <= 0) return
+            val name = sub.name
+            if (depth == 0 && name == "Android") continue
+            if (name in SKIP_DIRS) continue
+            scanDir(
+                dir = sub,
+                depth = depth + 1,
+                insideHidden = insideHidden || name.startsWith("."),
+                budget = budget,
+                out = out
+            )
         }
     }
 
@@ -175,8 +182,8 @@ class MediaRepository(private val context: Context) {
     }
 
     private companion object {
-        const val MAX_SCAN_DEPTH = 5
-        const val MAX_SCAN_ENTRIES = 6000
+        const val MAX_SCAN_DEPTH = 8
+        const val MAX_SCAN_ENTRIES = 20_000
         val VIDEO_EXTENSIONS = setOf(
             "mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "m4v",
             "ts", "m2ts", "mpg", "mpeg", "3gp", "3g2", "rmvb", "rm", "asf", "vob"
