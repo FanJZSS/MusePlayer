@@ -9,7 +9,6 @@ import com.muse.player.ui.about.AboutScreen
 import com.muse.player.ui.library.FolderScreen
 import com.muse.player.ui.library.LibraryScreen
 import com.muse.player.ui.library.LibraryViewModel
-import com.muse.player.ui.network.NetworkBrowserScreen
 import com.muse.player.ui.network.NetworkViewModel
 import com.muse.player.ui.settings.SettingsScreen
 
@@ -32,12 +31,6 @@ fun MuseApp() {
                 navController = navController,
                 viewModel = libraryViewModel,
                 bucketId = entry.arguments?.getString("bucketId").orEmpty()
-            )
-        }
-        composable("network_browser") {
-            NetworkBrowserScreen(
-                navController = navController,
-                viewModel = networkViewModel
             )
         }
         composable("settings") {

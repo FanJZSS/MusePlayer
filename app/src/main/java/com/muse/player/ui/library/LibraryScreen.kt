@@ -547,13 +547,7 @@ fun LibraryScreen(
                 }
 
                 else -> {
-                    NetworkTab(
-                        viewModel = networkViewModel,
-                        onOpenServer = { server ->
-                            networkViewModel.openServer(server)
-                            navController.navigate("network_browser")
-                        }
-                    )
+                    NetworkTab(viewModel = networkViewModel)
                 }
                 }
             }

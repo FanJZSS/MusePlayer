@@ -47,13 +47,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,7 +65,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavController
 import com.muse.player.data.PlayEntry
 import com.muse.player.data.network.DiscoveredServer
 import com.muse.player.data.network.NetworkRepository
@@ -82,18 +77,28 @@ import com.muse.player.ui.theme.MuseBlue
 import com.muse.player.util.formatSize
 
 /**
- * 媒体库中的“网络”页：局域网服务器列表。
+ * 媒体库中的“网络”页：局域网服务器列表；进入服务器后在当前分栏内浏览目录。
  */
 @Composable
-fun NetworkTab(viewModel: NetworkViewModel, onOpenServer: (NetworkServer) -> Unit) {
+fun NetworkTab(viewModel: NetworkViewModel) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
     val discovery by viewModel.discovery.collectAsStateWithLifecycle()
+    val browse by viewModel.browse.collectAsStateWithLifecycle()
 
     var showAdd by remember { mutableStateOf(false) }
     var showDiscovery by remember { mutableStateOf(false) }
     var prefill by remember { mutableStateOf<NetworkServer?>(null) }
     var editing by remember { mutableStateOf<NetworkServer?>(null) }
     var deleting by remember { mutableStateOf<NetworkServer?>(null) }
+
+    // 已进入服务器：直接在分栏内展示目录内容，不跳转全屏页面
+    if (browse.server != null) {
+        NetworkBrowserPanel(
+            viewModel = viewModel,
+            onExit = viewModel::closeServer
+        )
+        return
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -136,7 +141,7 @@ fun NetworkTab(viewModel: NetworkViewModel, onOpenServer: (NetworkServer) -> Uni
                 items(servers, key = { it.id }) { server ->
                     ServerRow(
                         server = server,
-                        onClick = { onOpenServer(server) },
+                        onClick = { viewModel.openServer(server) },
                         onEdit = { editing = server },
                         onDelete = { deleting = server }
                     )
@@ -564,22 +569,16 @@ private fun pathHint(type: ServerType): String = when (type) {
 }
 
 /**
- * 远程目录浏览页。
+ * 远程目录浏览面板：嵌在网络分栏内展示，不占用全屏页面。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NetworkBrowserScreen(navController: NavController, viewModel: NetworkViewModel) {
+private fun NetworkBrowserPanel(viewModel: NetworkViewModel, onExit: () -> Unit) {
     val state by viewModel.browse.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
-        if (viewModel.browse.value.server == null) {
-            navController.popBackStack()
-        }
-    }
-
-    BackHandler(enabled = state.canGoUp) {
-        viewModel.goUp()
+    // 返回键：先退回上级目录，到达起始目录后退出服务器浏览
+    BackHandler {
+        if (state.canGoUp) viewModel.goUp() else onExit()
     }
 
     val server = state.server
@@ -589,57 +588,48 @@ fun NetworkBrowserScreen(navController: NavController, viewModel: NetworkViewMod
         }
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                ),
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (state.canGoUp) viewModel.goUp() else navController.popBackStack()
-                    }) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                title = {
-                    Column {
-                        Text(
-                            text = server?.name?.ifBlank { server.host } ?: "网络浏览",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = if (state.path.isBlank()) {
-                                server?.displayAddress.orEmpty()
-                            } else {
-                                "/${state.path}"
-                            },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
-                    }
-                }
-            )
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { if (state.canGoUp) viewModel.goUp() else onExit() }) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "返回"
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = server?.name?.ifBlank { server.host } ?: "网络浏览",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = if (state.path.isBlank()) {
+                        server?.displayAddress.orEmpty()
+                    } else {
+                        "/${state.path}"
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = viewModel::refresh) {
+                Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+            }
         }
-    ) { innerPadding ->
+
         Box(
             modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
+                .fillMaxWidth()
+                .weight(1f)
         ) {
             when {
                 state.loading -> CircularProgressIndicator(
