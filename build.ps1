@@ -1,0 +1,52 @@
+$ErrorActionPreference = "Stop"
+
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $root
+
+# Java 17 for AGP 8.x
+if (-not $env:JAVA_HOME -or -not (Test-Path $env:JAVA_HOME)) {
+    if (Test-Path "C:\Java\jdk-17") {
+        $env:JAVA_HOME = "C:\Java\jdk-17"
+    } else {
+        Write-Host "JAVA_HOME is not set and C:\Java\jdk-17 was not found. Install JDK 17 first." -ForegroundColor Red
+        exit 1
+    }
+}
+
+$gradlew = Join-Path $root "gradlew.bat"
+if (-not (Test-Path $gradlew)) {
+    Write-Host "gradlew.bat not found in $root" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "==> Building release APK..." -ForegroundColor Cyan
+& $gradlew :app:assembleRelease :app:lintRelease --console=plain
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Build failed (exit code $LASTEXITCODE)." -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+# Read versionName from app/build.gradle.kts
+$version = "unknown"
+$gradleFile = Join-Path $root "app\build.gradle.kts"
+if (Test-Path $gradleFile) {
+    $content = Get-Content $gradleFile -Raw
+    if ($content -match 'versionName\s*=\s*"([^"]+)"') {
+        $version = $Matches[1]
+    }
+}
+
+$apk = Join-Path $root "app\build\outputs\apk\release\app-release.apk"
+if (-not (Test-Path $apk)) {
+    Write-Host "Release APK not found: $apk" -ForegroundColor Red
+    exit 1
+}
+
+$target = Join-Path $root ("MusePlayer_v{0}.apk" -f $version)
+Copy-Item $apk $target -Force
+$sizeMb = [math]::Round((Get-Item $target).Length / 1MB, 1)
+
+Write-Host ""
+Write-Host "Build succeeded." -ForegroundColor Green
+Write-Host ("Version : {0}" -f $version)
+Write-Host ("APK     : {0} ({1} MB)" -f $target, $sizeMb)
