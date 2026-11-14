@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Link
@@ -159,7 +160,7 @@ fun LibraryScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    if (!hasPermission && state.tab != 2) {
+    if (!hasPermission && state.tab != 3) {
         PermissionScreen(
             onRequest = {
                 permissionLauncher.launch(
@@ -168,7 +169,7 @@ fun LibraryScreen(
                 )
             },
             onOpenSettings = { openAppSettings(context) },
-            onBrowseNetwork = { viewModel.setTab(2) }
+            onBrowseNetwork = { viewModel.setTab(3) }
         )
         return
     }
@@ -188,6 +189,7 @@ fun LibraryScreen(
     val tabs = listOf(
         LibraryTab("媒体库", Icons.Rounded.VideoLibrary),
         LibraryTab("历史", Icons.Rounded.History),
+        LibraryTab("浏览", Icons.Rounded.FolderOpen),
         LibraryTab("网络", Icons.Rounded.Dns)
     )
     // 媒体库视图模式：0 = 视频，1 = 文件夹
@@ -521,6 +523,24 @@ fun LibraryScreen(
                             }
                         }
                     }
+                }
+
+                2 -> {
+                    BrowseTab(
+                        onPlay = { queue, index ->
+                            if (queue.isNotEmpty()) {
+                                val entries = queue.map { it.toPlayEntry() }
+                                val resume = if (SettingsRepository.state.value.autoResume) {
+                                    HistoryRepository.progressOf(
+                                        queue[index].uri.toString()
+                                    )
+                                } else {
+                                    0L
+                                }
+                                PlayerLauncher.open(context, entries, index, resume)
+                            }
+                        }
+                    )
                 }
 
                 else -> {
