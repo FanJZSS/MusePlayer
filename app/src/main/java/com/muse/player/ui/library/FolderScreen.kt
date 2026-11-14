@@ -12,8 +12,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,7 +46,6 @@ fun FolderScreen(
     val settings by SettingsRepository.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val wide = LocalConfiguration.current.screenWidthDp >= 600
-    val hidden = bucketId in settings.hiddenFolders
 
     val videos = remember(bucketId, state.videos) {
         viewModel.videosInFolder(bucketId)
@@ -90,22 +87,6 @@ fun FolderScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = {
-                        val hiding = !hidden
-                        viewModel.toggleFolderHidden(bucketId)
-                        if (hiding && !settings.showHiddenFolders) {
-                            navController.popBackStack()
-                        }
-                    }) {
-                        Icon(
-                            imageVector = if (hidden) {
-                                Icons.Rounded.Visibility
-                            } else {
-                                Icons.Rounded.VisibilityOff
-                            },
-                            contentDescription = if (hidden) "取消隐藏文件夹" else "隐藏文件夹"
-                        )
-                    }
                     Text(
                         text = "${videos.size} 个视频",
                         style = MaterialTheme.typography.labelMedium,
