@@ -52,6 +52,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,8 +70,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -155,7 +158,7 @@ fun LibraryScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    if (!hasPermission && state.tab != 3) {
+    if (!hasPermission && state.tab != 2) {
         PermissionScreen(
             onRequest = {
                 permissionLauncher.launch(
@@ -164,7 +167,7 @@ fun LibraryScreen(
                 )
             },
             onOpenSettings = { openAppSettings(context) },
-            onBrowseNetwork = { viewModel.setTab(3) }
+            onBrowseNetwork = { viewModel.setTab(2) }
         )
         return
     }
@@ -182,11 +185,12 @@ fun LibraryScreen(
     }
 
     val tabs = listOf(
-        LibraryTab("视频", Icons.Rounded.VideoLibrary),
-        LibraryTab("文件夹", Icons.Rounded.Folder),
+        LibraryTab("媒体库", Icons.Rounded.VideoLibrary),
         LibraryTab("历史", Icons.Rounded.History),
         LibraryTab("网络", Icons.Rounded.Dns)
     )
+    // 媒体库视图模式：0 = 视频，1 = 文件夹
+    var mediaMode by rememberSaveable { mutableIntStateOf(0) }
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val pagerState = rememberPagerState(initialPage = state.tab) { tabs.size }
 
@@ -372,6 +376,41 @@ fun LibraryScreen(
                 }
             }
 
+            if (state.tab == 0) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = mediaMode == 0,
+                        onClick = { mediaMode = 0 },
+                        label = { Text("视频 ${state.videos.size}") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.VideoLibrary,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                    FilterChip(
+                        selected = mediaMode == 1,
+                        onClick = { mediaMode = 1 },
+                        label = { Text("文件夹 ${state.folders.size}") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.Folder,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                }
+            }
+
             val progressMap = remember(state.history) {
                 state.history.associate { it.uri to it.positionMs }
             }
@@ -382,7 +421,31 @@ fun LibraryScreen(
             ) { page ->
                 when (page) {
                 0 -> {
-                    when {
+                    if (mediaMode == 1) {
+                        if (state.folders.isEmpty()) {
+                            EmptyState("没有文件夹", "视频会按照所在目录归入文件夹")
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                items(state.folders, key = { it.bucketId }) { folder ->
+                                    FolderRow(
+                                        folder = folder,
+                                        onClick = {
+                                            navController.navigate(
+                                                "folder/${Uri.encode(folder.bucketId)}"
+                                            )
+                                        },
+                                        hidden = folder.bucketId in state.hiddenFolderIds,
+                                        onToggleHidden = {
+                                            viewModel.toggleFolderHidden(folder.bucketId)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    } else when {
                         state.loading -> LoadingBox()
                         state.videos.isEmpty() -> EmptyState(
                             title = if (state.filterActive) "没有匹配的视频" else "媒体库为空",
@@ -431,32 +494,6 @@ fun LibraryScreen(
                 }
 
                 1 -> {
-                    if (state.folders.isEmpty()) {
-                        EmptyState("没有文件夹", "视频会按照所在目录归入文件夹")
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 8.dp)
-                        ) {
-                            items(state.folders, key = { it.bucketId }) { folder ->
-                                FolderRow(
-                                    folder = folder,
-                                    onClick = {
-                                        navController.navigate(
-                                            "folder/${Uri.encode(folder.bucketId)}"
-                                        )
-                                    },
-                                    hidden = folder.bucketId in state.hiddenFolderIds,
-                                    onToggleHidden = {
-                                        viewModel.toggleFolderHidden(folder.bucketId)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                2 -> {
                     if (state.history.isEmpty()) {
                         EmptyState("暂无播放记录", "播放过的视频会出现在这里")
                     } else {
