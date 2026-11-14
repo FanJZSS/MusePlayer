@@ -9,6 +9,7 @@ import android.net.Uri
 import android.graphics.Bitmap
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.view.LayoutInflater
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -90,6 +91,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -125,6 +127,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.muse.player.R
 import com.muse.player.data.SettingsRepository
 import com.muse.player.util.SeekPreviewLoader
 import com.muse.player.util.formatDuration
@@ -338,27 +341,36 @@ fun PlayerScreen(
                 }
             }
             if (state.connected) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            useController = false
-                            setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                            setShutterBackgroundColor(android.graphics.Color.BLACK)
-                            player = viewModel.player
-                        }
-                    },
-                    update = { view ->
-                        view.player = viewModel.player
-                        view.resizeMode = when (state.aspectMode) {
-                            1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                            2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        }
-                    },
-                    modifier = videoModifier
-                        .rotateSurface(surfaceRotation)
-                        .graphicsLayer(scaleX = zoom, scaleY = zoom)
-                )
+                // 旋转画面时必须使用 TextureView：SurfaceView 无法应用旋转/缩放变换
+                key(rotated) {
+                    AndroidView(
+                        factory = { ctx ->
+                            val view = if (rotated) {
+                                LayoutInflater.from(ctx)
+                                    .inflate(R.layout.view_muse_player_texture, null) as PlayerView
+                            } else {
+                                PlayerView(ctx)
+                            }
+                            view.apply {
+                                useController = false
+                                setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                                setShutterBackgroundColor(android.graphics.Color.BLACK)
+                                player = viewModel.player
+                            }
+                        },
+                        update = { view ->
+                            view.player = viewModel.player
+                            view.resizeMode = when (state.aspectMode) {
+                                1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            }
+                        },
+                        modifier = videoModifier
+                            .rotateSurface(surfaceRotation)
+                            .graphicsLayer(scaleX = zoom, scaleY = zoom)
+                    )
+                }
             } else {
                 androidx.compose.material3.CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
