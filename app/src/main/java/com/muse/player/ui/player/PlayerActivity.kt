@@ -134,15 +134,16 @@ class PlayerActivity : ComponentActivity() {
         )
     }
 
-    /** 从分享文本中提取 m3u8 / mp4 等媒体链接 */
+    /** 从分享文本中提取网络地址：优先视频扩展名，否则取第一个 http(s) 链接 */
     private fun extractMediaUrl(text: String?): String? {
         if (text.isNullOrBlank()) return null
-        return URL_REGEX.findAll(text)
+        val candidates = URL_REGEX.findAll(text)
             .map { it.value.trimEnd('。', '，', ',', '.', ')', '）', '!', '！', ';', '；') }
-            .firstOrNull { url ->
-                val path = url.substringBefore('?').lowercase()
-                MEDIA_EXTENSIONS.any { path.endsWith(".$it") }
-            }
+            .toList()
+        return candidates.firstOrNull { url ->
+            val path = url.substringBefore('?').lowercase()
+            MEDIA_EXTENSIONS.any { path.endsWith(".$it") }
+        } ?: candidates.firstOrNull()
     }
 
     private fun titleForUrl(url: String): String =
