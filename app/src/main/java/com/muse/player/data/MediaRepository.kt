@@ -19,6 +19,11 @@ import java.io.File
 
 class MediaRepository(private val context: Context) {
 
+    /** 隐藏视频元数据缓存：路径 -> 修改时间/大小/时长/宽高 */
+    private val metaCache by lazy {
+        context.getSharedPreferences("hidden_video_meta", Context.MODE_PRIVATE)
+    }
+
     suspend fun loadVideos(): List<VideoItem> = withContext(Dispatchers.IO) {
         val result = ArrayList<VideoItem>()
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -177,18 +182,22 @@ class MediaRepository(private val context: Context) {
 
     private fun File.toHiddenVideoItem(): VideoItem {
         val absolute = absolutePath
+        val fileSize = length()
+        val modified = lastModified()
+        // 文件未被改动时直接复用上次解析的时长/分辨率，避免重复解析
+        val cached = readCachedMeta(absolute)?.takeIf { it.modified == modified && it.size == fileSize }
         return VideoItem(
             id = negativeId(absolute),
             uri = Uri.fromFile(this),
             title = name.substringBeforeLast('.').ifBlank { name },
             path = absolute,
-            durationMs = 0L,
-            size = length(),
-            dateAdded = lastModified(),
+            durationMs = cached?.durationMs ?: 0L,
+            size = fileSize,
+            dateAdded = modified,
             bucketId = "hidden:${parentFile?.absolutePath ?: absolute}",
             bucketName = parentFile?.name?.ifBlank { "隐藏文件夹" } ?: "隐藏文件夹",
-            width = 0,
-            height = 0,
+            width = cached?.width ?: 0,
+            height = cached?.height ?: 0,
             mimeType = null
         )
     }
@@ -200,7 +209,7 @@ class MediaRepository(private val context: Context) {
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(filePath)
-            copy(
+            val result = copy(
                 durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: durationMs,
                 width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
@@ -208,6 +217,19 @@ class MediaRepository(private val context: Context) {
                 height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
                     ?.toIntOrNull() ?: height
             )
+            if (result.durationMs > 0L) {
+                saveCachedMeta(
+                    filePath,
+                    CachedMeta(
+                        modified = dateAdded,
+                        size = size,
+                        durationMs = result.durationMs,
+                        width = result.width,
+                        height = result.height
+                    )
+                )
+            }
+            result
         } catch (_: Exception) {
             this
         } finally {
@@ -216,6 +238,42 @@ class MediaRepository(private val context: Context) {
             } catch (_: Exception) {
             }
         }
+    }
+
+    private data class CachedMeta(
+        val modified: Long,
+        val size: Long,
+        val durationMs: Long,
+        val width: Int,
+        val height: Int
+    )
+
+    private fun readCachedMeta(path: String): CachedMeta? {
+        val raw = metaCache.getString(path, null) ?: return null
+        val parts = raw.split('|')
+        if (parts.size != 5) return null
+        return try {
+            CachedMeta(
+                modified = parts[0].toLong(),
+                size = parts[1].toLong(),
+                durationMs = parts[2].toLong(),
+                width = parts[3].toInt(),
+                height = parts[4].toInt()
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun saveCachedMeta(path: String, meta: CachedMeta) {
+        metaCache.edit()
+            .putString(
+                path,
+                listOf(
+                    meta.modified, meta.size, meta.durationMs, meta.width, meta.height
+                ).joinToString("|")
+            )
+            .apply()
     }
 
     /** 生成稳定的负数 id，避免与 MediaStore 的正数 id 冲突 */
