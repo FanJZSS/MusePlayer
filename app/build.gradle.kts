@@ -12,15 +12,22 @@ android {
         applicationId = "com.muse.player"
         minSdk = 24
         targetSdk = 34
-        versionCode = 38
-        versionName = "1.16.0"
+        versionCode = 39
+        versionName = "1.16.1"
         vectorDrawables { useSupportLibrary = true }
     }
 
     signingConfigs {
         create("release") {
-            // 个人使用：复用本机 debug keystore 给 release 包签名，保证可直接安装
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            // 个人使用：复用 debug keystore 给 release 包签名，保证可直接安装。
+            // 仓库内置一份（signing/debug.keystore），让 GitHub Actions 构建的包与本机签名一致；
+            // 没有内置文件时回退到本机 debug keystore。
+            val repoKeystore = rootProject.file("signing/debug.keystore")
+            storeFile = if (repoKeystore.exists()) {
+                repoKeystore
+            } else {
+                file("${System.getProperty("user.home")}/.android/debug.keystore")
+            }
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
