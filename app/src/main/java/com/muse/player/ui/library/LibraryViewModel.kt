@@ -141,19 +141,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
             .filter { folder -> query.isEmpty() || folder.name.contains(query, true) }
             .sortedWith(
-                when (current.sortField) {
-                    // 名称 / 文件夹排序：文件夹按名称排，忽略系统隐藏目录的前导点，
-                    // 避免 . 开头的目录被日期排序固定压到列表最下面
-                    SortField.NAME, SortField.FOLDER -> {
-                        val byName = compareBy<FolderItem, String>(String.CASE_INSENSITIVE_ORDER) {
-                            it.name.trimStart('.').ifBlank { it.name }
-                        }
-                        if (current.ascending) byName else byName.reversed()
-                    }
-                    else -> {
-                        val byDate = compareBy<FolderItem> { it.cover?.dateAdded ?: 0L }
-                        if (current.ascending) byDate else byDate.reversed()
-                    }
+                if (current.sortField == SortField.FOLDER) {
+                    compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+                } else {
+                    compareByDescending { it.cover?.dateAdded ?: 0L }
                 }
             )
 
