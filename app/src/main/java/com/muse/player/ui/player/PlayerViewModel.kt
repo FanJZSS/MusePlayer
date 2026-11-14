@@ -51,6 +51,8 @@ data class PlayerUiState(
     val hasNext: Boolean = false,
     val speed: Float = 1f,
     val aspectMode: Int = 0,
+    val repeatMode: Int = Player.REPEAT_MODE_OFF,
+    val shuffleEnabled: Boolean = false,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
     val audioTracks: List<TrackOption> = emptyList(),
@@ -245,6 +247,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 hasPrev = player.hasPreviousMediaItem(),
                 hasNext = player.hasNextMediaItem(),
                 speed = player.playbackParameters.speed,
+                repeatMode = player.repeatMode,
+                shuffleEnabled = player.shuffleModeEnabled,
                 audioTracks = audioTracks,
                 subtitleTracks = subtitleTracks,
                 subtitlesAvailable = !textDisabled && subtitleTracks.any { it.selected },
@@ -345,6 +349,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun setSpeed(speed: Float) {
         player?.playbackParameters = PlaybackParameters(speed)
         _state.update { it.copy(speed = speed) }
+    }
+
+    /** 循环模式：关闭 → 列表循环 → 单曲循环 → 关闭 */
+    fun cycleRepeatMode() {
+        val controller = player ?: return
+        val next = when (controller.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+        controller.repeatMode = next
+        _state.update { it.copy(repeatMode = next) }
+    }
+
+    /** 切换随机播放 */
+    fun toggleShuffle() {
+        val controller = player ?: return
+        val enabled = !controller.shuffleModeEnabled
+        controller.shuffleModeEnabled = enabled
+        _state.update { it.copy(shuffleEnabled = enabled) }
     }
 
     fun setAspectMode(mode: Int) {

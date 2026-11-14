@@ -54,7 +54,10 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.ScreenRotation
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Subtitles
@@ -100,6 +103,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -538,9 +542,21 @@ fun PlayerScreen(
                 // 中央播放控制
                 Row(
                     modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(36.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(onClick = viewModel::toggleShuffle) {
+                        Icon(
+                            Icons.Rounded.Shuffle,
+                            if (state.shuffleEnabled) "关闭随机播放" else "随机播放",
+                            tint = if (state.shuffleEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color.White.copy(alpha = 0.6f)
+                            },
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                     IconButton(onClick = viewModel::playPrevious) {
                         Icon(
                             Icons.Rounded.SkipPrevious,
@@ -570,6 +586,25 @@ fun PlayerScreen(
                             "下一个",
                             tint = Color.White,
                             modifier = Modifier.size(40.dp)
+                        )
+                    }
+                    IconButton(onClick = viewModel::cycleRepeatMode) {
+                        Icon(
+                            imageVector = when (state.repeatMode) {
+                                Player.REPEAT_MODE_ONE -> Icons.Rounded.RepeatOne
+                                else -> Icons.Rounded.Repeat
+                            },
+                            contentDescription = when (state.repeatMode) {
+                                Player.REPEAT_MODE_ONE -> "单曲循环"
+                                Player.REPEAT_MODE_ALL -> "列表循环"
+                                else -> "不循环"
+                            },
+                            tint = if (state.repeatMode == Player.REPEAT_MODE_OFF) {
+                                Color.White.copy(alpha = 0.6f)
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.size(32.dp)
                         )
                     }
                 }
