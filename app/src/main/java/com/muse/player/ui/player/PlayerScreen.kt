@@ -1061,7 +1061,7 @@ fun PlayerScreen(
                     zoom = 1f
                     showAspectSheet = false
                 }
-                SheetOption("9:16 竖屏（抖音）", state.aspectMode == 7) {
+                SheetOption("竖屏 9:16", state.aspectMode == 7) {
                     viewModel.setAspectMode(7)
                     zoom = 1f
                     showAspectSheet = false
