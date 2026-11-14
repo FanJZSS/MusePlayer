@@ -30,6 +30,11 @@ class PlayerActivity : ComponentActivity() {
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        // 先连接播放服务并提交播放请求，与 Compose 初始化并行执行，缩短起播等待
+        if (savedInstanceState == null) {
+            handleIntent(intent)
+        }
+
         setContent {
             MuseTheme(darkTheme = true) {
                 val state by viewModel.state.collectAsStateWithLifecycle()
@@ -39,10 +44,6 @@ class PlayerActivity : ComponentActivity() {
                     onBack = { finish() }
                 )
             }
-        }
-
-        if (savedInstanceState == null) {
-            handleIntent(intent)
         }
     }
 

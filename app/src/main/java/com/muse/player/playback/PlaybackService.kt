@@ -6,6 +6,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -51,6 +53,13 @@ class PlaybackService : MediaSessionService() {
                     }
                 }
         }
+
+        // 仅为预热的场景：一段时间内没有任何播放内容就释放服务
+        scope.launch {
+            delay(30_000)
+            val current = player
+            if (current == null || current.mediaItemCount == 0) stopSelf()
+        }
     }
 
     private fun buildPlayer(): ExoPlayer = ExoPlayer.Builder(this)
@@ -58,6 +67,19 @@ class PlaybackService : MediaSessionService() {
             DefaultMediaSourceFactory(MuseDataSource.Factory(this))
         )
         .setRenderersFactory(buildRenderersFactory())
+        // 调整缓冲策略：局域网拖动后尽快恢复播放，并保留最近 15 秒已下载数据
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    15_000, // 最小缓冲
+                    60_000, // 最大缓冲
+                    600, // 起播所需缓冲
+                    1_000 // 拖动/切换后所需缓冲
+                )
+                .setBackBuffer(15_000, true)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+        )
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)

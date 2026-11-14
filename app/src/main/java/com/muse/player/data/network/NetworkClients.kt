@@ -40,6 +40,9 @@ internal object NetworkClients {
             .build()
     }
 
+    /** 按服务器凭据缓存 SMB 会话，客户端生命周期内复用 */
+    private val smbContexts = java.util.concurrent.ConcurrentHashMap<String, CIFSContext>()
+
     fun list(server: NetworkServer, path: String): List<RemoteFile> = when (server.type) {
         ServerType.SMB -> listSmb(server, path)
         ServerType.FTP -> listFtp(server, path)
@@ -49,6 +52,15 @@ internal object NetworkClients {
     // ---------------------------------------------------------------- SMB
 
     fun smbContext(server: NetworkServer): CIFSContext {
+        // 复用已建立的 SMB 会话，避免每次打开/拖动都重新协商和认证
+        val key = "${server.host}:${server.port}:${server.username}:${server.password.hashCode()}"
+        smbContexts[key]?.let { return it }
+        val context = createSmbContext(server)
+        smbContexts[key] = context
+        return context
+    }
+
+    private fun createSmbContext(server: NetworkServer): CIFSContext {
         val props = Properties()
         props["jcifs.smb.client.minVersion"] = "SMB1"
         props["jcifs.smb.client.maxVersion"] = "SMB311"
@@ -69,29 +81,25 @@ internal object NetworkClients {
 
     private fun listSmb(server: NetworkServer, path: String): List<RemoteFile> {
         val context = smbContext(server)
-        try {
-            val url = NetworkRepository.smbUrl(server, path, directory = true)
-            val dir = SmbFile(url, context)
-            if (!dir.exists()) throw IOException("无法访问路径：$path")
-            val files = dir.listFiles() ?: return emptyList()
-            return files.mapNotNull { file ->
-                val name = file.name.trimEnd('/').trim()
-                if (name.isBlank() || name == "." || name == "..") return@mapNotNull null
-                val isDir = runCatching { file.isDirectory }.getOrDefault(false)
-                RemoteFile(
-                    name = name,
-                    relativePath = NetworkRepository.joinPath(path, name),
-                    isDirectory = isDir,
-                    size = if (isDir) 0L else runCatching { file.length() }.getOrDefault(0L),
-                    modified = runCatching { file.lastModified() }.getOrDefault(0L),
-                    uri = NetworkRepository.buildPlayUri(
-                        server,
-                        NetworkRepository.joinPath(path, name)
-                    )
+        val url = NetworkRepository.smbUrl(server, path, directory = true)
+        val dir = SmbFile(url, context)
+        if (!dir.exists()) throw IOException("无法访问路径：$path")
+        val files = dir.listFiles() ?: return emptyList()
+        return files.mapNotNull { file ->
+            val name = file.name.trimEnd('/').trim()
+            if (name.isBlank() || name == "." || name == "..") return@mapNotNull null
+            val isDir = runCatching { file.isDirectory }.getOrDefault(false)
+            RemoteFile(
+                name = name,
+                relativePath = NetworkRepository.joinPath(path, name),
+                isDirectory = isDir,
+                size = if (isDir) 0L else runCatching { file.length() }.getOrDefault(0L),
+                modified = runCatching { file.lastModified() }.getOrDefault(0L),
+                uri = NetworkRepository.buildPlayUri(
+                    server,
+                    NetworkRepository.joinPath(path, name)
                 )
-            }
-        } finally {
-            runCatching { context.close() }
+            )
         }
     }
 

@@ -25,6 +25,7 @@ import com.muse.player.data.PlayEntry
 import com.muse.player.data.SettingsRepository
 import com.muse.player.data.SubtitleFinder
 import com.muse.player.playback.PlaybackService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 data class TrackOption(
@@ -75,6 +77,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var pendingStart: PendingStart? = null
     private var ticker: Job? = null
+    private var startJob: Job? = null
     private var tickCount = 0
     private var entries: List<PlayEntry> = emptyList()
 
@@ -139,12 +142,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         if (entries.isEmpty()) return
         this.entries = entries
-        val items = entries.map { buildMediaItem(it) }
-        val safeIndex = index.coerceIn(0, items.lastIndex)
-        controller.setMediaItems(items, safeIndex, positionMs.coerceAtLeast(0L))
-        controller.prepare()
-        controller.playWhenReady = true
-        _state.update { it.copy(error = null) }
+        val safeIndex = index.coerceIn(0, entries.lastIndex)
+        val startPosition = positionMs.coerceAtLeast(0L)
+        // 字幕文件查找涉及磁盘遍历，放到 IO 线程，避免拖慢起播
+        startJob?.cancel()
+        startJob = viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) { entries.map { buildMediaItem(it) } }
+            val current = player ?: return@launch
+            current.setMediaItems(items, safeIndex, startPosition)
+            current.prepare()
+            current.playWhenReady = true
+            _state.update { it.copy(error = null) }
+        }
     }
 
     private fun buildMediaItem(entry: PlayEntry): MediaItem {

@@ -34,7 +34,6 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
     private var bytesRemaining: Long = C.LENGTH_UNSET.toLong()
 
     private var smbFile: SmbRandomAccessFile? = null
-    private var smbContext: jcifs.CIFSContext? = null
     private var ftpClient: FTPClient? = null
     private var ftpStream: InputStream? = null
     private var httpDataSource: DefaultHttpDataSource? = null
@@ -70,7 +69,6 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
 
     private fun openSmb(server: NetworkServer, relativePath: String, dataSpec: DataSpec) {
         val context = NetworkClients.smbContext(server)
-        smbContext = context
         val url = NetworkRepository.smbUrl(server, relativePath, directory = false)
         val file = SmbRandomAccessFile(url, "r", SmbConstants.DEFAULT_SHARING, context)
         smbFile = file
@@ -98,24 +96,14 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
         client.setFileType(FTP.BINARY_FILE_TYPE)
 
         val position = dataSpec.position.coerceAtLeast(0L)
-        val total = runCatching {
-            client.listFiles(relativePath)
-                ?.firstOrNull { !it.isDirectory }
-                ?.size
-                ?: -1L
-        }.getOrDefault(-1L)
-
         if (position > 0) {
             client.setRestartOffset(position)
         }
         val input = client.retrieveFileStream(relativePath)
             ?: throw IOException("FTP 无法打开文件：$relativePath")
         ftpStream = input
-        bytesRemaining = when {
-            dataSpec.length != C.LENGTH_UNSET.toLong() -> dataSpec.length
-            total > position -> total - position
-            else -> C.LENGTH_UNSET.toLong()
-        }
+        // 不再额外发送 LIST 查询文件大小：每次拖动都会多一个网络往返，明显拖慢定位
+        bytesRemaining = dataSpec.length
     }
 
     private fun openWebDav(server: NetworkServer, relativePath: String, dataSpec: DataSpec) {
@@ -177,8 +165,6 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
     private fun closeQuietly() {
         runCatching { smbFile?.close() }
         smbFile = null
-        runCatching { smbContext?.close() }
-        smbContext = null
 
         runCatching { ftpStream?.close() }
         ftpStream = null
