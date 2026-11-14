@@ -124,15 +124,15 @@ fun FolderScreen(
             )
         }
     ) { innerPadding ->
-        if (wide) {
+        if (wide || settings.gridViewMode) {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(200.dp),
+                columns = if (wide) GridCells.Adaptive(200.dp) else GridCells.Fixed(2),
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                contentPadding = PaddingValues(if (wide) 16.dp else 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (wide) 12.dp else 10.dp),
+                verticalArrangement = Arrangement.spacedBy(if (wide) 12.dp else 10.dp)
             ) {
                 gridItems(videos, key = { it.id }) { video ->
                     VideoCard(

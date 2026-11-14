@@ -52,7 +52,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _state.update {
                     it.copy(
                         hiddenFolderIds = settings.hiddenFolders,
-                        showHiddenFolders = settings.showHiddenFolders
+                        showHiddenFolders = settings.showHiddenFolders,
+                        grid = settings.gridViewMode
                     )
                 }
                 val systemHiddenChanged = settings.showSystemHiddenFolders != lastShowSystemHidden
@@ -143,7 +144,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         rebuild()
     }
 
-    fun toggleGrid() = _state.update { it.copy(grid = !it.grid) }
+    fun toggleGrid() {
+        val next = !_state.value.grid
+        _state.update { it.copy(grid = next) }
+        SettingsRepository.setGridViewMode(next)
+    }
 
     fun setSortField(field: SortField) {
         _state.update {

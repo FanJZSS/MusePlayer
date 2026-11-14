@@ -15,6 +15,7 @@ data class AppSettings(
     val hiddenFolders: Set<String> = emptySet(), // 被隐藏的文件夹 bucketId
     val showSystemHiddenFolders: Boolean = false, // 是否扫描并显示以 . 开头的系统隐藏文件夹
     val folderViewMode: Boolean = false, // 媒体库默认展示文件夹视图
+    val gridViewMode: Boolean = true, // 视频以网格展示（false 为列表）
     val seekGestureSeconds: Int = 180, // 全屏宽度左右滑动可调节的时长（秒）
     val decoderMode: Int = 0 // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
 )
@@ -37,6 +38,7 @@ object SettingsRepository {
             hiddenFolders = sp.getStringSet("hidden_folders", emptySet())?.toSet() ?: emptySet(),
             showSystemHiddenFolders = sp.getBoolean("show_system_hidden_folders", false),
             folderViewMode = sp.getBoolean("folder_view_mode", false),
+            gridViewMode = sp.getBoolean("grid_view_mode", true),
             seekGestureSeconds = sp.getInt("seek_gesture_seconds", 180),
             decoderMode = sp.getInt("decoder_mode", 0)
         )
@@ -70,6 +72,11 @@ object SettingsRepository {
     fun setFolderViewMode(value: Boolean) {
         sp.edit().putBoolean("folder_view_mode", value).apply()
         _state.value = _state.value.copy(folderViewMode = value)
+    }
+
+    fun setGridViewMode(value: Boolean) {
+        sp.edit().putBoolean("grid_view_mode", value).apply()
+        _state.value = _state.value.copy(gridViewMode = value)
     }
 
     fun setFolderHidden(bucketId: String, hidden: Boolean) {
