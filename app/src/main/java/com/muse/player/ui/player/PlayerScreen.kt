@@ -258,6 +258,9 @@ fun PlayerScreen(
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
             ?: return@LaunchedEffect
         if (controlsVisible || locked) {
+            // 黑底上必须用浅色图标，否则系统栏内容会变成黑色导致看不清
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
             controller.show(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         } else {
