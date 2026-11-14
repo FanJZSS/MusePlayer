@@ -18,6 +18,7 @@ data class AppSettings(
     val gridViewMode: Boolean = true, // 视频以网格展示（false 为列表）
     val seekGestureSeconds: Int = 180, // 全屏宽度左右滑动可调节的时长（秒）
     val longPressSpeed: Float = 2f, // 长按画面临时倍速播放的倍率（最低 2x）
+    val doubleTapSeekSeconds: Int = 10, // 双击画面两侧快进/快退的秒数
     val decoderMode: Int = 0 // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
 )
 
@@ -42,6 +43,7 @@ object SettingsRepository {
             gridViewMode = sp.getBoolean("grid_view_mode", true),
             seekGestureSeconds = sp.getInt("seek_gesture_seconds", 180),
             longPressSpeed = sp.getFloat("long_press_speed", 2f),
+            doubleTapSeekSeconds = sp.getInt("double_tap_seek_seconds", 10),
             decoderMode = sp.getInt("decoder_mode", 0)
         )
     }
@@ -109,6 +111,12 @@ object SettingsRepository {
         val safe = (kotlin.math.round(value * 2f) / 2f).coerceIn(2f, 4f)
         sp.edit().putFloat("long_press_speed", safe).apply()
         _state.value = _state.value.copy(longPressSpeed = safe)
+    }
+
+    fun setDoubleTapSeekSeconds(value: Int) {
+        val safe = value.coerceIn(5, 60)
+        sp.edit().putInt("double_tap_seek_seconds", safe).apply()
+        _state.value = _state.value.copy(doubleTapSeekSeconds = safe)
     }
 
     fun setDecoderMode(value: Int) {

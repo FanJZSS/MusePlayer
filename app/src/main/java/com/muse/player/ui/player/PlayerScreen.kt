@@ -384,12 +384,14 @@ fun PlayerScreen(
                                         )
                                     }
                                     offset.x < width / 2f -> {
-                                        viewModel.seekBy(-10_000)
-                                        gestureHint = GestureHint(GestureType.INFO, "后退 10 秒")
+                                        val seconds = SettingsRepository.state.value.doubleTapSeekSeconds
+                                        viewModel.seekBy(-seconds * 1000L)
+                                        gestureHint = GestureHint(GestureType.INFO, "后退 $seconds 秒")
                                     }
                                     else -> {
-                                        viewModel.seekBy(10_000)
-                                        gestureHint = GestureHint(GestureType.INFO, "前进 10 秒")
+                                        val seconds = SettingsRepository.state.value.doubleTapSeekSeconds
+                                        viewModel.seekBy(seconds * 1000L)
+                                        gestureHint = GestureHint(GestureType.INFO, "前进 $seconds 秒")
                                     }
                                 }
                             },

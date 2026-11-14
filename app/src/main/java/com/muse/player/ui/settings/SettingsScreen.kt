@@ -155,6 +155,7 @@ fun SettingsScreen(navController: NavController) {
             )
             SeekSensitivityControl()
             LongPressSpeedControl()
+            DoubleTapSeekControl()
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("解码")
@@ -291,6 +292,40 @@ private fun LongPressSpeedControl() {
         )
         Text(
             text = "长按画面以所选倍速播放，松手恢复原速；默认 2x，最低 2x",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun DoubleTapSeekControl() {
+    val settings by SettingsRepository.state.collectAsStateWithLifecycle()
+    var seconds by remember(settings.doubleTapSeekSeconds) {
+        mutableFloatStateOf(settings.doubleTapSeekSeconds.toFloat())
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("双击快进 / 快退", modifier = Modifier.weight(1f))
+            Text(
+                text = "${seconds.toInt()} 秒",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = seconds,
+            onValueChange = { seconds = it },
+            onValueChangeFinished = { SettingsRepository.setDoubleTapSeekSeconds(seconds.toInt()) },
+            valueRange = 5f..60f,
+            steps = 10
+        )
+        Text(
+            text = "双击画面左侧后退、右侧前进的秒数；默认 10 秒",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
