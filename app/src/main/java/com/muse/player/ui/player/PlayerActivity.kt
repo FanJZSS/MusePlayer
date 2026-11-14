@@ -11,6 +11,7 @@ import android.util.Rational
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -41,9 +42,15 @@ class PlayerActivity : ComponentActivity() {
                 PlayerScreen(
                     viewModel = viewModel,
                     state = state,
-                    onBack = { finish() }
+                    onBack = { onBackPressedDispatcher.onBackPressed() }
                 )
             }
+        }
+
+        // 返回时先暂停再退出，避免退出动画/服务解绑期间声音还在播放
+        onBackPressedDispatcher.addCallback(this) {
+            viewModel.pauseAndSave()
+            finish()
         }
     }
 
@@ -182,6 +189,15 @@ class PlayerActivity : ComponentActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) return
+        if (!SettingsRepository.state.value.backgroundPlay) {
+            // 在 onPause 就暂停，比等到 onStop 更早，避免退出时还有一两秒声音
+            viewModel.pauseAndSave()
+        }
     }
 
     override fun onStop() {
