@@ -30,12 +30,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.calculateTopPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -601,6 +607,26 @@ fun PlayerScreen(
             }
         }
 
+        // 系统栏纯黑背景：状态栏与手势条/虚拟按键区域不再透出视频画面
+        if (controlsVisible || locked) {
+            val statusInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(statusInset)
+                    .background(Color.Black)
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(navInset)
+                    .background(Color.Black)
+            )
+        }
+
         // 控制层
         AnimatedVisibility(
             visible = controlsVisible && !locked,
@@ -620,6 +646,7 @@ fun PlayerScreen(
                             )
                         )
                         .windowInsetsPadding(WindowInsets.displayCutout)
+                        .statusBarsPadding()
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -738,6 +765,7 @@ fun PlayerScreen(
                             )
                         )
                         .windowInsetsPadding(WindowInsets.displayCutout)
+                        .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
                     val durationMs = state.durationMs.coerceAtLeast(0L)
