@@ -113,17 +113,18 @@ class PlayerActivity : ComponentActivity() {
         }
         val sharedUris = (streamUris + clipDataUris(intent)).distinctBy { it.toString() }
         if (sharedUris.isNotEmpty()) {
-            viewModel.start(buildEntries(sharedUris), 0, 0L)
+            viewModel.start(buildEntries(sharedUris, intentTitles(intent)), 0, 0L)
             return
         }
 
         // 其他应用分享文本中的网络流媒体链接（如 m3u8 地址）
         if (intent.action == Intent.ACTION_SEND) {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
             val url = extractMediaUrl(text)
             if (url != null) {
                 // 优先使用调用方给的标题，其次是分享文本里链接前的视频名称
-                val title = intentTitle(intent)
+                val title = intentTitles(intent).firstOrNull()
                     ?: titleFromShareText(text, url)
                     ?: NetworkTitles.of(url)
                 viewModel.start(
@@ -139,7 +140,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         if (intent.action == Intent.ACTION_VIEW && data != null) {
-            viewModel.start(buildEntries(listOf(data), intentTitle(intent)), 0, 0L)
+            viewModel.start(buildEntries(listOf(data), intentTitles(intent)), 0, 0L)
         }
     }
 
@@ -148,15 +149,19 @@ class PlayerActivity : ComponentActivity() {
         return (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
     }
 
-    private fun buildEntries(uris: List<Uri>, preferredTitle: String? = null): List<PlayEntry> =
-        uris.map { uri ->
+    private fun buildEntries(
+        uris: List<Uri>,
+        extraTitles: List<String?> = emptyList()
+    ): List<PlayEntry> =
+        uris.mapIndexed { index, uri ->
             val network = uri.scheme == "http" || uri.scheme == "https"
             val raw = queryDisplayName(uri) ?: uri.lastPathSegment ?: "视频"
             val localTitle = raw.substringBeforeLast('.').ifBlank { raw }
             PlayEntry(
                 uri = uri.toString(),
                 title = if (network) {
-                    preferredTitle?.takeIf { it.isNotBlank() } ?: NetworkTitles.of(uri.toString())
+                    extraTitles.getOrNull(index)?.takeIf { it.isNotBlank() }
+                        ?: NetworkTitles.of(uri.toString())
                 } else {
                     localTitle
                 },
@@ -176,14 +181,46 @@ class PlayerActivity : ComponentActivity() {
         } ?: candidates.firstOrNull()
     }
 
-    /** 其他应用可能通过 EXTRA_TITLE / EXTRA_SUBJECT / ClipData 标签传入视频名称 */
-    private fun intentTitle(intent: Intent): String? =
-        listOf(
+    /**
+     * 收集调用方传入的视频标题。
+     *
+     * 除了系统标准的 EXTRA_TITLE / EXTRA_SUBJECT，还兼容 MX Player 的 Intent 约定：
+     * 不少流媒体应用按 MX 的规范把标题放在 "title" 或 "video_list.name" 里，
+     * 这也是 MX 几乎总能显示名称的原因。
+     */
+    private fun intentTitles(intent: Intent): List<String?> {
+        val listNames = stringListExtra(intent, "video_list.name")
+        val mxTitles = stringListExtra(intent, "title")
+        // MX 文档：同时存在时以 video_list.name 为准
+        val names = if (listNames.isNotEmpty()) listNames else mxTitles
+        val single = sequenceOf(
+            names.firstOrNull(),
             intent.getStringExtra(Intent.EXTRA_TITLE),
             intent.getStringExtra(Intent.EXTRA_SUBJECT),
             intent.clipData?.description?.label?.toString()
         ).mapNotNull { it?.trim() }
-            .firstOrNull { it.length in 2..80 && !it.contains('\n') && !NetworkTitles.isPlaceholder(it) }
+            .firstOrNull { isValidTitle(it) }
+
+        if (names.size > 1) {
+            return names.mapIndexed { index, name ->
+                name?.trim()?.takeIf { isValidTitle(it) } ?: if (index == 0) single else null
+            }
+        }
+        return listOf(single)
+    }
+
+    /** 读取 String / String[] / List 形式的 extra，统一成列表 */
+    private fun stringListExtra(intent: Intent, key: String): List<String?> =
+        when (val value = intent.extras?.get(key)) {
+            is Array<*> -> value.map { it?.toString() }
+            is List<*> -> value.map { it?.toString() }
+            is String -> listOf(value)
+            is CharSequence -> listOf(value.toString())
+            else -> emptyList()
+        }
+
+    private fun isValidTitle(title: String): Boolean =
+        title.length in 2..120 && !title.contains('\n') && !NetworkTitles.isPlaceholder(title)
 
     /** 分享文本常在链接前带上视频名称，例如“《庆余年》第 1 集 https://.../index.m3u8” */
     private fun titleFromShareText(text: String?, url: String): String? {
