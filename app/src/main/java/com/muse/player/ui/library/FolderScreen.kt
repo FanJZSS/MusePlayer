@@ -1,5 +1,9 @@
 package com.muse.player.ui.library
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +15,9 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,7 +28,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -55,17 +63,19 @@ fun FolderScreen(
         state.history.associate { it.uri to it.positionMs }
     }
 
-    fun play(video: VideoItem) {
+    fun play(video: VideoItem, fromStart: Boolean = false) {
         if (videos.isEmpty()) return
         val entries = videos.map { it.toPlayEntry() }
         val index = videos.indexOfFirst { it.id == video.id }.coerceAtLeast(0)
-        val resume = if (SettingsRepository.state.value.autoResume) {
+        val resume = if (!fromStart && SettingsRepository.state.value.autoResume) {
             HistoryRepository.progressOf(video.uri.toString())
         } else {
             0L
         }
         PlayerLauncher.open(context, entries, index, resume)
     }
+
+    var actionVideo by remember { mutableStateOf<VideoItem?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -120,7 +130,7 @@ fun FolderScreen(
                         video = video,
                         progressMs = progressMap[video.uri.toString()] ?: 0L,
                         onClick = { play(video) },
-                        onLongClick = {}
+                        onLongClick = { actionVideo = video }
                     )
                 }
             }
@@ -136,10 +146,27 @@ fun FolderScreen(
                         video = video,
                         progressMs = progressMap[video.uri.toString()] ?: 0L,
                         onClick = { play(video) },
-                        onLongClick = {}
+                        onLongClick = { actionVideo = video }
                     )
                 }
             }
         }
+    }
+
+    actionVideo?.let { video ->
+        ActionSheet(
+            title = video.title,
+            actions = listOf(
+                MenuAction("播放", Icons.Rounded.PlayArrow) { play(video) },
+                MenuAction("从头播放", Icons.Rounded.Replay) { play(video, fromStart = true) },
+                MenuAction("复制路径", Icons.Rounded.ContentCopy) {
+                    val text = video.path ?: video.uri.toString()
+                    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    manager?.setPrimaryClip(ClipData.newPlainText("Muse Player", text))
+                    Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                }
+            ),
+            onDismiss = { actionVideo = null }
+        )
     }
 }

@@ -1,6 +1,8 @@
 package com.muse.player.ui.library
 
 import android.content.ClipboardManager
+import android.content.ClipData
+import android.widget.Toast
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -35,19 +37,26 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.ViewList
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -93,6 +102,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import androidx.navigation.NavController
+import com.muse.player.data.FolderItem
 import com.muse.player.data.HistoryEntry
 import com.muse.player.data.HistoryRepository
 import com.muse.player.data.PlayEntry
@@ -126,6 +136,8 @@ fun LibraryScreen(
     var showOverflow by remember { mutableStateOf(false) }
     var showNetworkDialog by remember { mutableStateOf(false) }
     var infoVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var actionVideo by remember { mutableStateOf<VideoItem?>(null) }
+    var actionFolder by remember { mutableStateOf<FolderItem?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -176,11 +188,11 @@ fun LibraryScreen(
         return
     }
 
-    fun playVideo(video: VideoItem, queue: List<VideoItem>) {
+    fun playVideo(video: VideoItem, queue: List<VideoItem>, fromStart: Boolean = false) {
         if (queue.isEmpty()) return
         val entries = queue.map { it.toPlayEntry() }
         val index = queue.indexOfFirst { it.id == video.id }.coerceAtLeast(0)
-        val resume = if (SettingsRepository.state.value.autoResume) {
+        val resume = if (!fromStart && SettingsRepository.state.value.autoResume) {
             HistoryRepository.progressOf(video.uri.toString())
         } else {
             0L
@@ -434,9 +446,7 @@ fun LibraryScreen(
                                             )
                                         },
                                         hidden = folder.bucketId in state.hiddenFolderIds,
-                                        onToggleHidden = {
-                                            viewModel.toggleFolderHidden(folder.bucketId)
-                                        }
+                                        onLongClick = { actionFolder = folder }
                                     )
                                 }
                             }
@@ -468,7 +478,7 @@ fun LibraryScreen(
                                     video = video,
                                     progressMs = progressMap[video.uri.toString()] ?: 0L,
                                     onClick = { playVideo(video, state.videos) },
-                                    onLongClick = { infoVideo = video }
+                                    onLongClick = { actionVideo = video }
                                 )
                             }
                         }
@@ -482,7 +492,7 @@ fun LibraryScreen(
                                     video = video,
                                     progressMs = progressMap[video.uri.toString()] ?: 0L,
                                     onClick = { playVideo(video, state.videos) },
-                                    onLongClick = { infoVideo = video }
+                                    onLongClick = { actionVideo = video }
                                 )
                             }
                         }
@@ -570,6 +580,64 @@ fun LibraryScreen(
                 )
                 showNetworkDialog = false
             }
+        )
+    }
+
+    actionFolder?.let { folder ->
+        val videos = viewModel.videosInFolder(folder.bucketId)
+        val hidden = folder.bucketId in state.hiddenFolderIds
+        ActionSheet(
+            title = folder.name,
+            actions = listOf(
+                MenuAction("播放全部", Icons.Rounded.PlayArrow) {
+                    videos.firstOrNull()?.let { playVideo(it, videos, fromStart = true) }
+                },
+                MenuAction("随机播放全部", Icons.Rounded.Shuffle) {
+                    val shuffled = videos.shuffled()
+                    shuffled.firstOrNull()?.let { playVideo(it, shuffled, fromStart = true) }
+                },
+                MenuAction(
+                    label = if (hidden) "取消隐藏文件夹" else "隐藏文件夹",
+                    icon = if (hidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff
+                ) {
+                    viewModel.toggleFolderHidden(folder.bucketId)
+                }
+            ),
+            onDismiss = { actionFolder = null }
+        )
+    }
+
+    actionVideo?.let { video ->
+        val queue = viewModel.videosInFolder(video.bucketId)
+            .ifEmpty { state.videos }
+        val openFolder = state.folders.any { it.bucketId == video.bucketId }
+        ActionSheet(
+            title = video.title,
+            actions = listOfNotNull(
+                MenuAction("播放", Icons.Rounded.PlayArrow) {
+                    playVideo(video, queue)
+                },
+                MenuAction("从头播放", Icons.Rounded.Replay) {
+                    playVideo(video, queue, fromStart = true)
+                },
+                MenuAction("查看信息", Icons.Rounded.Info) {
+                    infoVideo = video
+                },
+                MenuAction("复制路径", Icons.Rounded.ContentCopy) {
+                    val text = video.path ?: video.uri.toString()
+                    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    manager?.setPrimaryClip(ClipData.newPlainText("Muse Player", text))
+                    Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                },
+                if (openFolder) {
+                    MenuAction("打开所在文件夹", Icons.Rounded.FolderOpen) {
+                        navController.navigate("folder/${Uri.encode(video.bucketId)}")
+                    }
+                } else {
+                    null
+                }
+            ),
+            onDismiss = { actionVideo = null }
         )
     }
 
