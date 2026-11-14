@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import com.muse.player.data.PlayEntry
 import com.muse.player.data.SettingsRepository
 import com.muse.player.ui.theme.MuseTheme
+import com.muse.player.util.NetworkTitles
 
 class PlayerActivity : ComponentActivity() {
 
@@ -88,8 +89,7 @@ class PlayerActivity : ComponentActivity() {
         if (intent.action == Intent.ACTION_VIEW && data != null && data.scheme == SCHEME_MUSE) {
             val url = data.getQueryParameter("url") ?: data.getQueryParameter("src")
             if (!url.isNullOrBlank()) {
-                val title = data.getQueryParameter("title")
-                    ?: url.substringAfterLast('/').substringBefore('?').ifBlank { "网络串流" }
+                val title = data.getQueryParameter("title") ?: NetworkTitles.of(url)
                 viewModel.start(
                     listOf(PlayEntry(uri = url, title = title, isNetwork = true)),
                     0,
@@ -119,10 +119,15 @@ class PlayerActivity : ComponentActivity() {
 
         // 其他应用分享文本中的网络流媒体链接（如 m3u8 地址）
         if (intent.action == Intent.ACTION_SEND) {
-            val url = extractMediaUrl(intent.getStringExtra(Intent.EXTRA_TEXT))
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+            val url = extractMediaUrl(text)
             if (url != null) {
+                // 优先使用调用方给的标题，其次是分享文本里链接前的视频名称
+                val title = intentTitle(intent)
+                    ?: titleFromShareText(text, url)
+                    ?: NetworkTitles.of(url)
                 viewModel.start(
-                    listOf(PlayEntry(uri = url, title = titleForUrl(url), isNetwork = true)),
+                    listOf(PlayEntry(uri = url, title = title, isNetwork = true)),
                     0,
                     0L
                 )
@@ -134,7 +139,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         if (intent.action == Intent.ACTION_VIEW && data != null) {
-            viewModel.start(buildEntries(listOf(data)), 0, 0L)
+            viewModel.start(buildEntries(listOf(data), intentTitle(intent)), 0, 0L)
         }
     }
 
@@ -143,14 +148,21 @@ class PlayerActivity : ComponentActivity() {
         return (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
     }
 
-    private fun buildEntries(uris: List<Uri>): List<PlayEntry> = uris.map { uri ->
-        val raw = queryDisplayName(uri) ?: uri.lastPathSegment ?: "视频"
-        PlayEntry(
-            uri = uri.toString(),
-            title = raw.substringBeforeLast('.').ifBlank { raw },
-            isNetwork = uri.scheme == "http" || uri.scheme == "https"
-        )
-    }
+    private fun buildEntries(uris: List<Uri>, preferredTitle: String? = null): List<PlayEntry> =
+        uris.map { uri ->
+            val network = uri.scheme == "http" || uri.scheme == "https"
+            val raw = queryDisplayName(uri) ?: uri.lastPathSegment ?: "视频"
+            val localTitle = raw.substringBeforeLast('.').ifBlank { raw }
+            PlayEntry(
+                uri = uri.toString(),
+                title = if (network) {
+                    preferredTitle?.takeIf { it.isNotBlank() } ?: NetworkTitles.of(uri.toString())
+                } else {
+                    localTitle
+                },
+                isNetwork = network
+            )
+        }
 
     /** 从分享文本中提取网络地址：优先视频扩展名，否则取第一个 http(s) 链接 */
     private fun extractMediaUrl(text: String?): String? {
@@ -164,11 +176,27 @@ class PlayerActivity : ComponentActivity() {
         } ?: candidates.firstOrNull()
     }
 
-    private fun titleForUrl(url: String): String =
-        url.substringBefore('?')
-            .substringAfterLast('/')
-            .substringBeforeLast('.')
-            .ifBlank { "网络串流" }
+    /** 其他应用可能通过 EXTRA_TITLE / EXTRA_SUBJECT / ClipData 标签传入视频名称 */
+    private fun intentTitle(intent: Intent): String? =
+        listOf(
+            intent.getStringExtra(Intent.EXTRA_TITLE),
+            intent.getStringExtra(Intent.EXTRA_SUBJECT),
+            intent.clipData?.description?.label?.toString()
+        ).mapNotNull { it?.trim() }
+            .firstOrNull { it.length in 2..80 && !it.contains('\n') && !NetworkTitles.isPlaceholder(it) }
+
+    /** 分享文本常在链接前带上视频名称，例如“《庆余年》第 1 集 https://.../index.m3u8” */
+    private fun titleFromShareText(text: String?, url: String): String? {
+        if (text.isNullOrBlank()) return null
+        val index = text.indexOf(url)
+        if (index <= 0) return null
+        val title = text.substring(0, index)
+            .replace(Regex("\\s+"), " ")
+            .replace(Regex("^(我正在看|我在看|正在播放|分享视频|分享|推荐)[:：]?\\s*"), "")
+            .trim()
+            .trim('“', '”', '"', '「', '」', '【', '】', '《', '》', '：', ':', '-', '—', '|', '·', ' ')
+        return title.takeIf { it.length in 2..80 }
+    }
 
     private fun queryDisplayName(uri: Uri): String? = try {
         contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->

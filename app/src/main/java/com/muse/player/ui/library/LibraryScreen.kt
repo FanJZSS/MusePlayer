@@ -103,6 +103,7 @@ import com.muse.player.ui.network.NetworkTab
 import com.muse.player.ui.network.NetworkViewModel
 import com.muse.player.ui.player.PlayerLauncher
 import com.muse.player.util.MediaPermissions
+import com.muse.player.util.NetworkTitles
 import com.muse.player.util.formatDate
 import com.muse.player.util.formatDuration
 import com.muse.player.util.formatSize
@@ -560,7 +561,7 @@ fun LibraryScreen(
         NetworkDialog(
             onDismiss = { showNetworkDialog = false },
             onPlay = { url ->
-                val title = url.substringAfterLast('/').ifBlank { "网络串流" }
+                val title = NetworkTitles.of(url)
                 PlayerLauncher.open(
                     context,
                     listOf(PlayEntry(uri = url, title = title, isNetwork = true)),

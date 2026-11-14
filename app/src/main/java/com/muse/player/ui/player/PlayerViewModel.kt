@@ -25,6 +25,7 @@ import com.muse.player.data.PlayEntry
 import com.muse.player.data.SettingsRepository
 import com.muse.player.data.SubtitleFinder
 import com.muse.player.playback.PlaybackService
+import com.muse.player.util.NetworkTitles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -157,14 +158,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun buildMediaItem(entry: PlayEntry): MediaItem {
+        val metadata = MediaMetadata.Builder().setArtist("Muse Player")
+        // 网络视频的标题若只是占位（通用文件名或域名），不写死标题，
+        // 让播放器读取流内的元数据（如 ID3 标题）来展示真实名称
+        if (!(entry.isNetwork && NetworkTitles.isPlaceholder(entry.title))) {
+            metadata.setTitle(entry.title)
+        }
         val builder = MediaItem.Builder()
             .setUri(entry.uri)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(entry.title)
-                    .setArtist("Muse Player")
-                    .build()
-            )
+            .setMediaMetadata(metadata.build())
 
         if (entry.isNetwork) {
             inferMimeType(entry.uri)?.let { builder.setMimeType(it) }
@@ -242,11 +244,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
         val duration = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
         val textDisabled = player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+        // 优先展示流内元数据里的真实标题，占位标题时不覆盖
+        val runtimeTitle = player.mediaMetadata.title?.toString()
+            ?.takeIf { it.isNotBlank() && !NetworkTitles.isPlaceholder(it) }
+        val itemTitle = player.currentMediaItem?.mediaMetadata?.title?.toString()
+            ?.takeIf { it.isNotBlank() }
 
         _state.update {
             it.copy(
                 connected = true,
-                title = player.currentMediaItem?.mediaMetadata?.title?.toString()
+                title = runtimeTitle
+                    ?: itemTitle
                     ?: entries.getOrNull(player.currentMediaItemIndex)?.title
                     ?: "",
                 isPlaying = player.isPlaying,
@@ -474,7 +482,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             ?: entry?.durationMs
             ?: 0L
         val position = controller.currentPosition
-        val title = item.mediaMetadata.title?.toString() ?: entry?.title ?: ""
+        // 优先使用流内元数据标题；旧历史里的 index 之类占位标题会在重新播放时被替换
+        val title = controller.mediaMetadata.title?.toString()
+            ?.takeIf { it.isNotBlank() && !NetworkTitles.isPlaceholder(it) }
+            ?: item.mediaMetadata.title?.toString()?.takeIf { it.isNotBlank() }
+            ?: entry?.title?.takeIf { it.isNotBlank() && !NetworkTitles.isPlaceholder(it) }
+            ?: entry?.uri?.takeIf { it.startsWith("http") }?.let { NetworkTitles.of(it) }
+            ?: entry?.title
+            ?: ""
         if (position > 0) {
             HistoryRepository.record(uri, title, position, duration)
         }
