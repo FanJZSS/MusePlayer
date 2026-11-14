@@ -6,6 +6,7 @@ import jcifs.CIFSContext
 import jcifs.config.PropertyConfiguration
 import jcifs.context.BaseContext
 import jcifs.smb.NtlmPasswordAuthenticator
+import jcifs.smb.SmbException
 import jcifs.smb.SmbFile
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -43,6 +44,43 @@ internal object NetworkClients {
     /** 按服务器凭据缓存 SMB 会话，客户端生命周期内复用 */
     private val smbContexts = java.util.concurrent.ConcurrentHashMap<String, CIFSContext>()
 
+    private fun smbKey(server: NetworkServer): String =
+        "${server.host}:${server.port}:${server.username}:${server.password.hashCode()}"
+
+    /** 连接失败后丢弃缓存的会话，避免复用已失效的 SMB 传输，下次重试重新协商 */
+    internal fun invalidateSmbContext(server: NetworkServer) {
+        val context = smbContexts.remove(smbKey(server)) ?: return
+        runCatching { (context as? AutoCloseable)?.close() }
+    }
+
+    /** 把 jcifs 的底层异常转换成可读提示，并清理失效会话 */
+    internal fun smbError(server: NetworkServer, e: Exception): IOException {
+        invalidateSmbContext(server)
+        val raw = e.message.orEmpty()
+        val reachable = canReach(server.host, server.port)
+        val message = when {
+            !reachable ->
+                "无法连接 ${server.host}:${server.port}。请确认手机与服务器在同一局域网、" +
+                    "服务器已开启 SMB 共享，并检查路由器是否开启 AP 隔离、" +
+                    "电脑防火墙是否放行 445 端口、本应用是否被系统限制联网"
+            raw.contains("Failed to connect", ignoreCase = true) ||
+                e.cause is java.net.ConnectException ||
+                e.cause is java.net.SocketTimeoutException ->
+                "SMB 连接中断（${server.host}:${server.port}），请稍后重试"
+            else -> raw.ifBlank { "SMB 访问失败，请检查账号密码与共享名" }
+        }
+        return IOException(message, e)
+    }
+
+    private fun canReach(host: String, port: Int): Boolean = try {
+        java.net.Socket().use { socket ->
+            socket.connect(java.net.InetSocketAddress(host, port), 3000)
+        }
+        true
+    } catch (_: Exception) {
+        false
+    }
+
     fun list(server: NetworkServer, path: String): List<RemoteFile> = when (server.type) {
         ServerType.SMB -> listSmb(server, path)
         ServerType.FTP -> listFtp(server, path)
@@ -53,7 +91,7 @@ internal object NetworkClients {
 
     fun smbContext(server: NetworkServer): CIFSContext {
         // 复用已建立的 SMB 会话，避免每次打开/拖动都重新协商和认证
-        val key = "${server.host}:${server.port}:${server.username}:${server.password.hashCode()}"
+        val key = smbKey(server)
         smbContexts[key]?.let { return it }
         val context = createSmbContext(server)
         smbContexts[key] = context
@@ -85,24 +123,28 @@ internal object NetworkClients {
     private fun listSmb(server: NetworkServer, path: String): List<RemoteFile> {
         val context = smbContext(server)
         val url = NetworkRepository.smbUrl(server, path, directory = true)
-        val dir = SmbFile(url, context)
-        if (!dir.exists()) throw IOException("无法访问路径：$path")
-        val files = dir.listFiles() ?: return emptyList()
-        return files.mapNotNull { file ->
-            val name = file.name.trimEnd('/').trim()
-            if (name.isBlank() || name == "." || name == "..") return@mapNotNull null
-            val isDir = runCatching { file.isDirectory }.getOrDefault(false)
-            RemoteFile(
-                name = name,
-                relativePath = NetworkRepository.joinPath(path, name),
-                isDirectory = isDir,
-                size = if (isDir) 0L else runCatching { file.length() }.getOrDefault(0L),
-                modified = runCatching { file.lastModified() }.getOrDefault(0L),
-                uri = NetworkRepository.buildPlayUri(
-                    server,
-                    NetworkRepository.joinPath(path, name)
+        try {
+            val dir = SmbFile(url, context)
+            if (!dir.exists()) throw IOException("无法访问路径：$path")
+            val files = dir.listFiles() ?: return emptyList()
+            return files.mapNotNull { file ->
+                val name = file.name.trimEnd('/').trim()
+                if (name.isBlank() || name == "." || name == "..") return@mapNotNull null
+                val isDir = runCatching { file.isDirectory }.getOrDefault(false)
+                RemoteFile(
+                    name = name,
+                    relativePath = NetworkRepository.joinPath(path, name),
+                    isDirectory = isDir,
+                    size = if (isDir) 0L else runCatching { file.length() }.getOrDefault(0L),
+                    modified = runCatching { file.lastModified() }.getOrDefault(0L),
+                    uri = NetworkRepository.buildPlayUri(
+                        server,
+                        NetworkRepository.joinPath(path, name)
+                    )
                 )
-            )
+            }
+        } catch (e: SmbException) {
+            throw smbError(server, e)
         }
     }
 

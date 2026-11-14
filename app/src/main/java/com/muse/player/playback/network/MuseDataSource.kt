@@ -15,6 +15,7 @@ import com.muse.player.data.network.NetworkRepository
 import com.muse.player.data.network.NetworkServer
 import com.muse.player.data.network.ServerType
 import jcifs.SmbConstants
+import jcifs.smb.SmbException
 import jcifs.smb.SmbRandomAccessFile
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
@@ -77,7 +78,11 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
     private fun openSmb(server: NetworkServer, relativePath: String, dataSpec: DataSpec) {
         val context = NetworkClients.smbContext(server)
         val url = NetworkRepository.smbUrl(server, relativePath, directory = false)
-        val file = SmbRandomAccessFile(url, "r", SmbConstants.DEFAULT_SHARING, context)
+        val file = try {
+            SmbRandomAccessFile(url, "r", SmbConstants.DEFAULT_SHARING, context)
+        } catch (e: SmbException) {
+            throw NetworkClients.smbError(server, e)
+        }
         smbFile = file
         readAheadPos = 0
         readAheadLen = 0

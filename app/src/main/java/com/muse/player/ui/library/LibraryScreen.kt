@@ -1,5 +1,6 @@
 package com.muse.player.ui.library
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -576,6 +577,24 @@ fun LibraryScreen(
     }
 }
 
+/** 读取剪贴板中的播放地址，非网络链接或读取失败时返回 null */
+private fun readClipboardUrl(context: Context): String? {
+    return try {
+        val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        val text = manager?.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(context)
+            ?.toString()
+            ?.trim()
+        val scheme = text?.substringBefore(':', "")?.lowercase() ?: return null
+        if (text.length > 2048) return null
+        if (scheme in setOf("http", "https", "rtsp", "rtmps", "rtmp", "mms", "ftp")) text else null
+    } catch (_: Exception) {
+        null
+    }
+}
+
 private fun playHistory(entry: HistoryEntry, video: VideoItem?, context: Context) {
     val playEntry = PlayEntry(
         uri = entry.uri,
@@ -647,8 +666,15 @@ private fun PermissionScreen(
 
 @Composable
 private fun NetworkDialog(onDismiss: () -> Unit, onPlay: (String) -> Unit) {
+    val context = LocalContext.current
     var url by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+
+    // 打开对话框时自动填入剪贴板中的播放地址
+    LaunchedEffect(Unit) {
+        val clip = readClipboardUrl(context)
+        if (clip != null && url.isBlank()) url = clip
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
