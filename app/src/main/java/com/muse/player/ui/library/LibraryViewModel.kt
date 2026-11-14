@@ -7,6 +7,7 @@ import com.muse.player.data.FolderItem
 import com.muse.player.data.HistoryEntry
 import com.muse.player.data.HistoryRepository
 import com.muse.player.data.MediaRepository
+import com.muse.player.data.SettingsRepository
 import com.muse.player.data.SortField
 import com.muse.player.data.VideoItem
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +25,9 @@ data class LibraryUiState(
     val sortField: SortField = SortField.DATE,
     val ascending: Boolean = false,
     val tab: Int = 0,
-    val grid: Boolean = true
+    val grid: Boolean = true,
+    val hiddenFolderIds: Set<String> = emptySet(),
+    val showHiddenFolders: Boolean = false
 ) {
     val filterActive: Boolean get() = query.isNotBlank()
 }
@@ -41,6 +44,17 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             HistoryRepository.entries.collect { history ->
                 _state.update { it.copy(history = history) }
+            }
+        }
+        viewModelScope.launch {
+            SettingsRepository.state.collect { settings ->
+                _state.update {
+                    it.copy(
+                        hiddenFolderIds = settings.hiddenFolders,
+                        showHiddenFolders = settings.showHiddenFolders
+                    )
+                }
+                rebuild()
             }
         }
         refresh()
@@ -60,6 +74,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val query = current.query.trim()
 
         var filtered = allVideos
+        if (!current.showHiddenFolders && current.hiddenFolderIds.isNotEmpty()) {
+            filtered = filtered.filterNot { it.bucketId in current.hiddenFolderIds }
+        }
         if (query.isNotEmpty()) {
             filtered = filtered.filter {
                 it.title.contains(query, ignoreCase = true) ||
@@ -79,7 +96,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             if (current.ascending) it else it.reversed()
         }
 
-        val folders = allVideos
+        val folders = filtered
             .groupBy { it.bucketId }
             .map { (id, list) ->
                 FolderItem(
@@ -128,4 +145,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun removeHistory(uri: String) = HistoryRepository.remove(uri)
 
     fun clearHistory() = HistoryRepository.clear()
+
+    fun toggleFolderHidden(bucketId: String) = SettingsRepository.toggleFolderHidden(bucketId)
 }

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,13 +24,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
@@ -47,6 +53,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -62,8 +70,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -88,7 +99,7 @@ import com.muse.player.util.formatDate
 import com.muse.player.util.formatDuration
 import com.muse.player.util.formatSize
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     navController: NavController,
@@ -157,6 +168,24 @@ fun LibraryScreen(
             0L
         }
         PlayerLauncher.open(context, entries, index, resume)
+    }
+
+    val tabs = listOf(
+        LibraryTab("视频", Icons.Rounded.VideoLibrary),
+        LibraryTab("文件夹", Icons.Rounded.Folder),
+        LibraryTab("历史", Icons.Rounded.History),
+        LibraryTab("网络", Icons.Rounded.Dns)
+    )
+    val wide = LocalConfiguration.current.screenWidthDp >= 600
+    val pagerState = rememberPagerState(initialPage = state.tab) { tabs.size }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            if (page != viewModel.state.value.tab) viewModel.setTab(page)
+        }
+    }
+    LaunchedEffect(state.tab) {
+        if (pagerState.currentPage != state.tab) pagerState.animateScrollToPage(state.tab)
     }
 
     Scaffold(
@@ -269,11 +298,30 @@ fun LibraryScreen(
             )
         }
     ) { innerPadding ->
-        Column(
+        Row(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
+            if (wide) {
+                NavigationRail(containerColor = MaterialTheme.colorScheme.background) {
+                    Spacer(Modifier.height(8.dp))
+                    tabs.forEachIndexed { index, tab ->
+                        NavigationRailItem(
+                            selected = state.tab == index,
+                            onClick = { viewModel.setTab(index) },
+                            icon = { Icon(tab.icon, contentDescription = tab.title) },
+                            label = { Text(tab.title) }
+                        )
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize()
+            ) {
             if (showSearch) {
                 OutlinedTextField(
                     value = state.query,
@@ -294,16 +342,18 @@ fun LibraryScreen(
                 )
             }
 
-            TabRow(
-                selectedTabIndex = state.tab,
-                containerColor = MaterialTheme.colorScheme.background
-            ) {
-                listOf("视频", "文件夹", "历史", "网络").forEachIndexed { index, title ->
-                    Tab(
-                        selected = state.tab == index,
-                        onClick = { viewModel.setTab(index) },
-                        text = { Text(title) }
-                    )
+            if (!wide) {
+                TabRow(
+                    selectedTabIndex = state.tab,
+                    containerColor = MaterialTheme.colorScheme.background
+                ) {
+                    tabs.forEachIndexed { index, tab ->
+                        Tab(
+                            selected = state.tab == index,
+                            onClick = { viewModel.setTab(index) },
+                            text = { Text(tab.title) }
+                        )
+                    }
                 }
             }
 
@@ -311,7 +361,11 @@ fun LibraryScreen(
                 state.history.associate { it.uri to it.positionMs }
             }
 
-            when (state.tab) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (page) {
                 0 -> {
                     when {
                         state.loading -> LoadingBox()
@@ -325,7 +379,11 @@ fun LibraryScreen(
                         )
 
                         state.grid -> LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
+                            columns = if (wide) {
+                                GridCells.Adaptive(200.dp)
+                            } else {
+                                GridCells.Fixed(2)
+                            },
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(12.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -366,11 +424,18 @@ fun LibraryScreen(
                             contentPadding = PaddingValues(vertical = 8.dp)
                         ) {
                             items(state.folders, key = { it.bucketId }) { folder ->
-                                FolderRow(folder) {
-                                    navController.navigate(
-                                        "folder/${Uri.encode(folder.bucketId)}"
-                                    )
-                                }
+                                FolderRow(
+                                    folder = folder,
+                                    onClick = {
+                                        navController.navigate(
+                                            "folder/${Uri.encode(folder.bucketId)}"
+                                        )
+                                    },
+                                    hidden = folder.bucketId in state.hiddenFolderIds,
+                                    onToggleHidden = {
+                                        viewModel.toggleFolderHidden(folder.bucketId)
+                                    }
+                                )
                             }
                         }
                     }
@@ -426,6 +491,8 @@ fun LibraryScreen(
                         }
                     )
                 }
+                }
+            }
             }
         }
     }
@@ -619,6 +686,8 @@ private fun InfoLine(label: String, value: String) {
         Text(text = value, style = MaterialTheme.typography.bodySmall)
     }
 }
+
+private data class LibraryTab(val title: String, val icon: ImageVector)
 
 private fun openAppSettings(context: Context) {
     val intent = Intent(

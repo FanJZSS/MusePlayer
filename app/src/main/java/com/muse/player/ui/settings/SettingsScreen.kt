@@ -83,6 +83,15 @@ fun SettingsScreen(navController: NavController) {
             }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionTitle("媒体库")
+            SwitchRow(
+                title = "显示隐藏文件夹",
+                subtitle = "开启后，已隐藏文件夹中的视频会重新出现在媒体库",
+                checked = settings.showHiddenFolders,
+                onCheckedChange = SettingsRepository::setShowHiddenFolders
+            )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("播放")
             SwitchRow(
                 title = "自动续播",
