@@ -11,7 +11,6 @@ import android.util.Rational
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -52,11 +51,8 @@ class PlayerActivity : ComponentActivity() {
             }
         }
 
-        // 返回时先暂停再退出，避免退出动画/服务解绑期间声音还在播放
-        onBackPressedDispatcher.addCallback(this) {
-            viewModel.pauseAndSave()
-            finish()
-        }
+        // 返回逻辑统一交给 PlayerScreen 内的 BackHandler 处理（暂停 + finish）。
+        // 这里不再额外注册 Activity 级返回回调，避免两个回调互相抢占导致需要多次返回才退出。
     }
 
     override fun onNewIntent(intent: Intent) {
