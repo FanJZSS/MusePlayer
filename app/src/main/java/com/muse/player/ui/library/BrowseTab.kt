@@ -254,18 +254,25 @@ fun BrowseTab(
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = if (!allFilesAccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        "浏览 SD 卡、U 盘需要「所有文件访问权限」"
-                    } else {
-                        "请确认存储设备已挂载并授予存储访问权限"
+                    text = when {
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !allFilesAccess ->
+                            "浏览 SD 卡、U 盘需要「所有文件访问权限」"
+                        Build.VERSION.SDK_INT == Build.VERSION_CODES.Q ->
+                            "Android 10 需要在系统设置中允许本应用访问存储"
+                        else -> "请确认存储设备已挂载并授予存储访问权限"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (!allFilesAccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !allFilesAccess) {
                     Spacer(Modifier.height(12.dp))
                     TextButton(onClick = { openAllFilesAccess(context) }) {
                         Text("前往授权")
+                    }
+                } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { openAppSettings(context) }) {
+                        Text("打开应用设置")
                     }
                 }
             }
@@ -430,6 +437,18 @@ private fun openAllFilesAccess(context: Context) {
             context.startActivity(Intent(AndroidSettings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
         } catch (_: Exception) {
         }
+    }
+}
+
+private fun openAppSettings(context: Context) {
+    try {
+        context.startActivity(
+            Intent(
+                AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${context.packageName}")
+            )
+        )
+    } catch (_: Exception) {
     }
 }
 
