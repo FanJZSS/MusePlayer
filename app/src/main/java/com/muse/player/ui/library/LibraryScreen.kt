@@ -52,7 +52,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -265,6 +264,27 @@ fun LibraryScreen(
                             expanded = showOverflow,
                             onDismissRequest = { showOverflow = false }
                         ) {
+                            if (state.tab == 0) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (mediaMode == 0) "文件夹视图"
+                                            else "视频视图"
+                                        )
+                                    },
+                                    onClick = {
+                                        mediaMode = if (mediaMode == 0) 1 else 0
+                                        showOverflow = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (mediaMode == 0) Icons.Rounded.Folder
+                                            else Icons.Rounded.VideoLibrary,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text(if (state.grid) "列表视图" else "网格视图") },
                                 onClick = {
@@ -377,41 +397,6 @@ fun LibraryScreen(
                             text = { Text(tab.title) }
                         )
                     }
-                }
-            }
-
-            if (state.tab == 0) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FilterChip(
-                        selected = mediaMode == 0,
-                        onClick = { mediaMode = 0 },
-                        label = { Text("视频 ${state.videos.size}") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Rounded.VideoLibrary,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    )
-                    FilterChip(
-                        selected = mediaMode == 1,
-                        onClick = { mediaMode = 1 },
-                        label = { Text("文件夹 ${state.folders.size}") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Rounded.Folder,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    )
                 }
             }
 
