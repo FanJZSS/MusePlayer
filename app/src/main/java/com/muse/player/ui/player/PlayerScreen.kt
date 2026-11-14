@@ -1022,6 +1022,7 @@ fun PlayerScreen(
         ModalBottomSheet(onDismissRequest = { showAspectSheet = false }) {
             Column(
                 modifier = Modifier
+                    .verticalScroll(rememberScrollState())
                     .navigationBarsPadding()
                     .padding(bottom = 16.dp)
             ) {
