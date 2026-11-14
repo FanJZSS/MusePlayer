@@ -192,8 +192,10 @@ fun LibraryScreen(
         LibraryTab("浏览", Icons.Rounded.FolderOpen),
         LibraryTab("网络", Icons.Rounded.Dns)
     )
-    // 媒体库视图模式：0 = 视频，1 = 文件夹
-    var mediaMode by rememberSaveable { mutableIntStateOf(0) }
+    // 媒体库视图模式：0 = 视频，1 = 文件夹（持久化，下次打开保持上次选择）
+    var mediaMode by rememberSaveable {
+        mutableIntStateOf(if (SettingsRepository.state.value.folderViewMode) 1 else 0)
+    }
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val pagerState = rememberPagerState(initialPage = state.tab) { tabs.size }
 
@@ -276,6 +278,7 @@ fun LibraryScreen(
                                     },
                                     onClick = {
                                         mediaMode = if (mediaMode == 0) 1 else 0
+                                        SettingsRepository.setFolderViewMode(mediaMode == 1)
                                         showOverflow = false
                                     },
                                     leadingIcon = {
