@@ -48,6 +48,32 @@
                 <data android:mimeType="video/*" />
                 <data android:mimeType="application/vnd.apple.mpegurl" />
                 <data android:mimeType="application/x-mpegurl" />
+                <data android:mimeType="application/dash+xml" />
+            </intent-filter>
+
+            <!-- 浏览器/其他应用中的网络流媒体链接（m3u8、mpd 等） -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:host="*" android:pathPattern=".*\\.m3u8" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.m3u8" android:scheme="https" />
+                <data android:host="*" android:pathPattern=".*\\.m3u" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.m3u" android:scheme="https" />
+                <data android:host="*" android:pathPattern=".*\\.mpd" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.mpd" android:scheme="https" />
+                <data android:host="*" android:pathPattern=".*\\.mp4" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.mp4" android:scheme="https" />
+                <data android:host="*" android:pathPattern=".*\\.mkv" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.mkv" android:scheme="https" />
+                <data android:host="*" android:pathPattern=".*\\.webm" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.webm" android:scheme="https" />
+                <data android:host="*" android:pathPattern=".*\\.flv" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.flv" android:scheme="https" />
+                <data android:host="*" android:pathPattern=".*\\.ts" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.ts" android:scheme="https" />
+                <data android:host="*" android:pathPattern=".*\\.m3u8.*" android:scheme="http" />
+                <data android:host="*" android:pathPattern=".*\\.m3u8.*" android:scheme="https" />
             </intent-filter>
 
             <!-- 由其他应用“分享”单个视频到本应用 -->
@@ -66,6 +92,13 @@
                 <data android:mimeType="video/*" />
                 <data android:mimeType="application/vnd.apple.mpegurl" />
                 <data android:mimeType="application/x-mpegurl" />
+            </intent-filter>
+
+            <!-- 由其他应用“分享”文本中的流媒体链接到本应用 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
 
             <!-- 外部应用通过 muse://play?url=... 直接调起播放 -->

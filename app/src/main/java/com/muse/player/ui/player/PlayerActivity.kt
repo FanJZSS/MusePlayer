@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.Rational
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -97,6 +98,22 @@ class PlayerActivity : ComponentActivity() {
             return
         }
 
+        // 其他应用分享文本中的网络流媒体链接（如 m3u8 地址）
+        if (intent.action == Intent.ACTION_SEND) {
+            val url = extractMediaUrl(intent.getStringExtra(Intent.EXTRA_TEXT))
+            if (url != null) {
+                viewModel.start(
+                    listOf(PlayEntry(uri = url, title = titleForUrl(url), isNetwork = true)),
+                    0,
+                    0L
+                )
+            } else {
+                Toast.makeText(this, "未找到可播放的视频链接", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+            return
+        }
+
         if (intent.action == Intent.ACTION_VIEW && data != null) {
             viewModel.start(buildEntries(listOf(data)), 0, 0L)
         }
@@ -111,9 +128,27 @@ class PlayerActivity : ComponentActivity() {
         val raw = queryDisplayName(uri) ?: uri.lastPathSegment ?: "视频"
         PlayEntry(
             uri = uri.toString(),
-            title = raw.substringBeforeLast('.').ifBlank { raw }
+            title = raw.substringBeforeLast('.').ifBlank { raw },
+            isNetwork = uri.scheme == "http" || uri.scheme == "https"
         )
     }
+
+    /** 从分享文本中提取 m3u8 / mp4 等媒体链接 */
+    private fun extractMediaUrl(text: String?): String? {
+        if (text.isNullOrBlank()) return null
+        return URL_REGEX.findAll(text)
+            .map { it.value.trimEnd('。', '，', ',', '.', ')', '）', '!', '！', ';', '；') }
+            .firstOrNull { url ->
+                val path = url.substringBefore('?').lowercase()
+                MEDIA_EXTENSIONS.any { path.endsWith(".$it") }
+            }
+    }
+
+    private fun titleForUrl(url: String): String =
+        url.substringBefore('?')
+            .substringAfterLast('/')
+            .substringBeforeLast('.')
+            .ifBlank { "网络串流" }
 
     private fun queryDisplayName(uri: Uri): String? = try {
         contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -162,5 +197,9 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_INDEX = "extra_index"
         const val EXTRA_POSITION = "extra_position"
         private const val SCHEME_MUSE = "muse"
+        private val URL_REGEX = Regex("https?://[^\\s\"'<>]+")
+        private val MEDIA_EXTENSIONS = listOf(
+            "m3u8", "m3u", "mpd", "mp4", "mkv", "webm", "flv", "ts", "mov", "avi", "m4v", "3gp"
+        )
     }
 }
