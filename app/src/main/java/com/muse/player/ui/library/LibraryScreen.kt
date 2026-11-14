@@ -190,13 +190,17 @@ fun LibraryScreen(
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val pagerState = rememberPagerState(initialPage = state.tab) { tabs.size }
 
+    // 滑动结束后再同步 tab，避免滑动过程中动画反向抢手势造成卡顿
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { page ->
+        snapshotFlow { pagerState.settledPage }.collect { page ->
             if (page != viewModel.state.value.tab) viewModel.setTab(page)
         }
     }
     LaunchedEffect(state.tab) {
-        if (pagerState.currentPage != state.tab) pagerState.animateScrollToPage(state.tab)
+        // 仅在点击 tab 时触发滚动；用户正在拖动时不打断
+        if (!pagerState.isScrollInProgress && pagerState.currentPage != state.tab) {
+            pagerState.animateScrollToPage(state.tab)
+        }
     }
 
     Scaffold(

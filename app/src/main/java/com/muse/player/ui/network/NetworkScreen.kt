@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -42,6 +44,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -68,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.muse.player.data.PlayEntry
+import com.muse.player.data.network.DiscoveredServer
 import com.muse.player.data.network.NetworkRepository
 import com.muse.player.data.network.NetworkServer
 import com.muse.player.data.network.RemoteFile
@@ -83,8 +87,11 @@ import com.muse.player.util.formatSize
 @Composable
 fun NetworkTab(viewModel: NetworkViewModel, onOpenServer: (NetworkServer) -> Unit) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
+    val discovery by viewModel.discovery.collectAsStateWithLifecycle()
 
     var showAdd by remember { mutableStateOf(false) }
+    var showDiscovery by remember { mutableStateOf(false) }
+    var prefill by remember { mutableStateOf<NetworkServer?>(null) }
     var editing by remember { mutableStateOf<NetworkServer?>(null) }
     var deleting by remember { mutableStateOf<NetworkServer?>(null) }
 
@@ -101,6 +108,14 @@ fun NetworkTab(viewModel: NetworkViewModel, onOpenServer: (NetworkServer) -> Uni
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
+            TextButton(onClick = {
+                showDiscovery = true
+                viewModel.discoverLan()
+            }) {
+                Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("搜索")
+            }
             TextButton(onClick = { showAdd = true }) {
                 Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
@@ -111,7 +126,7 @@ fun NetworkTab(viewModel: NetworkViewModel, onOpenServer: (NetworkServer) -> Uni
         if (servers.isEmpty()) {
             EmptyState(
                 title = "还没有局域网服务器",
-                subtitle = "点击右上角“添加”接入 SMB / FTP / WebDAV 共享目录"
+                subtitle = "点击右上角“搜索”自动发现设备，或“添加”手动填写"
             )
         } else {
             LazyColumn(
@@ -128,6 +143,39 @@ fun NetworkTab(viewModel: NetworkViewModel, onOpenServer: (NetworkServer) -> Uni
                 }
             }
         }
+    }
+
+    if (showDiscovery) {
+        DiscoveryDialog(
+            state = discovery,
+            savedServers = servers,
+            onScanAgain = viewModel::discoverLan,
+            onSelect = { result ->
+                showDiscovery = false
+                viewModel.closeDiscovery()
+                prefill = NetworkServer(
+                    type = result.type,
+                    name = result.name.ifBlank { result.host },
+                    host = result.host,
+                    port = result.port
+                )
+            },
+            onDismiss = {
+                showDiscovery = false
+                viewModel.closeDiscovery()
+            }
+        )
+    }
+
+    prefill?.let { server ->
+        ServerEditDialog(
+            initial = server,
+            onDismiss = { prefill = null },
+            onSave = {
+                viewModel.saveServer(it)
+                prefill = null
+            }
+        )
     }
 
     if (showAdd) {
@@ -172,6 +220,116 @@ fun NetworkTab(viewModel: NetworkViewModel, onOpenServer: (NetworkServer) -> Uni
             }
         )
     }
+}
+
+@Composable
+private fun DiscoveryDialog(
+    state: DiscoveryState,
+    savedServers: List<NetworkServer>,
+    onScanAgain: () -> Unit,
+    onSelect: (DiscoveredServer) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val available = remember(state.results, savedServers) {
+        state.results.filter { result ->
+            savedServers.none {
+                it.type == result.type && it.host == result.host && it.port == result.port
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("搜索局域网") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                when {
+                    state.scanning || !state.finished -> {
+                        LinearProgressIndicator(
+                            progress = {
+                                if (state.total > 0) state.scanned.toFloat() / state.total else 0f
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "正在扫描局域网… ${state.scanned} / ${state.total}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "已发现 ${available.size} 台设备",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    available.isEmpty() -> {
+                        Text(
+                            text = "未发现共享设备",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "请确认手机与电脑 / NAS 连接同一 Wi-Fi，" +
+                                "并且已开启 SMB、FTP 或 WebDAV 共享。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    else -> {
+                        Text(
+                            text = "发现 ${available.size} 台设备，点击可直接添加",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                            items(
+                                available,
+                                key = { "${it.type.name}-${it.host}-${it.port}" }
+                            ) { result ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelect(result) }
+                                        .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Dns,
+                                        contentDescription = null,
+                                        tint = MuseBlue,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = result.name.ifBlank { result.host },
+                                            style = MaterialTheme.typography.bodyLarge
+                                        )
+                                        Text(
+                                            text = "${result.type.label} · ${result.host}:${result.port}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (state.scanning || !state.finished) {
+                TextButton(onClick = onDismiss) { Text("取消") }
+            } else {
+                TextButton(onClick = onScanAgain) { Text("重新搜索") }
+            }
+        },
+        dismissButton = {
+            if (!state.scanning && state.finished) {
+                TextButton(onClick = onDismiss) { Text("关闭") }
+            }
+        }
+    )
 }
 
 @Composable
@@ -249,19 +407,23 @@ private fun ServerEditDialog(
     onDismiss: () -> Unit,
     onSave: (NetworkServer) -> Unit
 ) {
-    var type by remember { mutableStateOf(initial?.type ?: ServerType.SMB) }
-    var name by remember { mutableStateOf(initial?.name.orEmpty()) }
-    var host by remember { mutableStateOf(initial?.host.orEmpty()) }
-    var port by remember { mutableStateOf((initial?.port ?: ServerType.SMB.defaultPort).toString()) }
-    var username by remember { mutableStateOf(initial?.username.orEmpty()) }
-    var password by remember { mutableStateOf(initial?.password.orEmpty()) }
-    var path by remember { mutableStateOf(initial?.path.orEmpty()) }
-    var passwordVisible by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var type by remember(initial) { mutableStateOf(initial?.type ?: ServerType.SMB) }
+    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
+    var host by remember(initial) { mutableStateOf(initial?.host.orEmpty()) }
+    var port by remember(initial) {
+        mutableStateOf((initial?.port ?: ServerType.SMB.defaultPort).toString())
+    }
+    var username by remember(initial) { mutableStateOf(initial?.username.orEmpty()) }
+    var password by remember(initial) { mutableStateOf(initial?.password.orEmpty()) }
+    var path by remember(initial) { mutableStateOf(initial?.path.orEmpty()) }
+    var passwordVisible by remember(initial) { mutableStateOf(false) }
+    var error by remember(initial) { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "添加服务器" else "编辑服务器") },
+        title = {
+            Text(if (initial?.id.isNullOrBlank()) "添加服务器" else "编辑服务器")
+        },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
