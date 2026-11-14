@@ -55,7 +55,7 @@ fun FolderScreen(
     val context = LocalContext.current
     val wide = LocalConfiguration.current.screenWidthDp >= 600
 
-    val videos = remember(bucketId, state.videos) {
+    val videos = remember(bucketId, state.videos, state.sortField, state.ascending) {
         viewModel.videosInFolder(bucketId)
     }
     val folderName = state.folders.firstOrNull { it.bucketId == bucketId }?.name ?: "文件夹"

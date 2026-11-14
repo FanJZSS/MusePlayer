@@ -36,7 +36,13 @@ data class LibraryUiState(
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MediaRepository(application)
-    private val _state = MutableStateFlow(LibraryUiState())
+    private val _state = MutableStateFlow(
+        LibraryUiState(
+            sortField = runCatching { SortField.valueOf(SettingsRepository.state.value.sortField) }
+                .getOrDefault(SortField.DATE),
+            ascending = SettingsRepository.state.value.sortAscending
+        )
+    )
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
 
     private var allVideos: List<VideoItem> = emptyList()
@@ -123,7 +129,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val sorted = filtered.sortedWith(comparator).let {
             if (current.ascending) it else it.reversed()
         }
-
         val folders = filtered
             .groupBy { it.bucketId }
             .map { (id, list) ->
@@ -146,9 +151,19 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         _state.update { it.copy(videos = sorted, folders = folders) }
     }
 
-    fun videosInFolder(bucketId: String): List<VideoItem> =
-        allVideos.filter { it.bucketId == bucketId }
-            .sortedByDescending { it.dateAdded }
+    fun videosInFolder(bucketId: String): List<VideoItem> {
+        val current = _state.value
+        val comparator: Comparator<VideoItem> = when (current.sortField) {
+            SortField.DATE -> compareBy { it.dateAdded }
+            SortField.NAME -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+            SortField.DURATION -> compareBy { it.durationMs }
+            SortField.SIZE -> compareBy { it.size }
+            SortField.FOLDER -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+        }
+        return allVideos.filter { it.bucketId == bucketId }
+            .sortedWith(comparator)
+            .let { if (current.ascending) it else it.reversed() }
+    }
 
     fun setTab(tab: Int) = _state.update { it.copy(tab = tab) }
 
@@ -171,6 +186,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 it.copy(sortField = field, ascending = field == SortField.NAME || field == SortField.FOLDER)
             }
         }
+        val current = _state.value
+        SettingsRepository.setSort(current.sortField.name, current.ascending)
         rebuild()
     }
 

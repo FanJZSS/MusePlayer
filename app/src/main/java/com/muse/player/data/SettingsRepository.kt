@@ -16,6 +16,8 @@ data class AppSettings(
     val showSystemHiddenFolders: Boolean = false, // 是否扫描并显示以 . 开头的系统隐藏文件夹
     val folderViewMode: Boolean = false, // 媒体库默认展示文件夹视图
     val gridViewMode: Boolean = true, // 视频以网格展示（false 为列表）
+    val sortField: String = "DATE", // 媒体库排序字段（SortField 名称）
+    val sortAscending: Boolean = false, // 媒体库排序是否升序
     val seekGestureSeconds: Int = 180, // 全屏宽度左右滑动可调节的时长（秒）
     val longPressSpeed: Float = 2f, // 长按画面临时倍速播放的倍率（最低 2x）
     val doubleTapSeekSeconds: Int = 10, // 双击画面两侧快进/快退的秒数
@@ -44,6 +46,8 @@ object SettingsRepository {
             showSystemHiddenFolders = sp.getBoolean("show_system_hidden_folders", false),
             folderViewMode = sp.getBoolean("folder_view_mode", false),
             gridViewMode = sp.getBoolean("grid_view_mode", true),
+            sortField = sp.getString("sort_field", "DATE") ?: "DATE",
+            sortAscending = sp.getBoolean("sort_ascending", false),
             seekGestureSeconds = sp.getInt("seek_gesture_seconds", 180),
             longPressSpeed = sp.getFloat("long_press_speed", 2f),
             doubleTapSeekSeconds = sp.getInt("double_tap_seek_seconds", 10),
@@ -87,6 +91,14 @@ object SettingsRepository {
     fun setGridViewMode(value: Boolean) {
         sp.edit().putBoolean("grid_view_mode", value).apply()
         _state.value = _state.value.copy(gridViewMode = value)
+    }
+
+    fun setSort(field: String, ascending: Boolean) {
+        sp.edit()
+            .putString("sort_field", field)
+            .putBoolean("sort_ascending", ascending)
+            .apply()
+        _state.value = _state.value.copy(sortField = field, sortAscending = ascending)
     }
 
     fun setFolderHidden(bucketId: String, hidden: Boolean) {
