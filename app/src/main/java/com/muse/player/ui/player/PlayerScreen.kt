@@ -553,8 +553,9 @@ fun PlayerScreen(
             )
         }
 
-        // 拖动进度时的画面预览
-        if (previewVisible) {
+        // 拖动进度时的画面预览（拿不到帧时整块隐藏，不留黑色占位）
+        val previewFrame = previewBitmap
+        if (previewVisible && previewFrame != null) {
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -563,17 +564,15 @@ fun PlayerScreen(
                     .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                previewBitmap?.let { frame ->
-                    Image(
-                        bitmap = frame.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .width(180.dp)
-                            .height(101.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                    )
-                }
+                Image(
+                    bitmap = previewFrame.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .width(180.dp)
+                        .height(101.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                )
             }
         }
 
