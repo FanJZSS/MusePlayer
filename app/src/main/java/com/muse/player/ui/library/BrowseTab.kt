@@ -2,6 +2,7 @@ package com.muse.player.ui.library
 
 import android.net.Uri
 import android.os.Environment
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,6 +66,14 @@ fun BrowseTab(
     var entries by remember { mutableStateOf<List<BrowseEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
+
+    // 系统返回键：有上级目录时先回到上一级，避免直接退出应用
+    BackHandler(enabled = currentPath != root.absolutePath) {
+        val parent = File(currentPath).parentFile
+        if (parent != null && parent.absolutePath.startsWith(root.absolutePath)) {
+            currentPath = parent.absolutePath
+        }
+    }
 
     LaunchedEffect(currentPath) {
         loading = true
