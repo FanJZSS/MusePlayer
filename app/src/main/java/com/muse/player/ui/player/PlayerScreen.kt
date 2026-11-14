@@ -498,7 +498,7 @@ fun PlayerScreen(
                                     }
 
                                     2 -> {
-                                        val value = (startVolume - accDy / height * maxVolume * 4f)
+                                        val value = (startVolume - accDy / height * maxVolume * 2.5f)
                                             .toInt().coerceIn(0, maxVolume)
                                         try {
                                             audioManager.setStreamVolume(
