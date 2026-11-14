@@ -360,9 +360,11 @@ fun PlayerScreen(
                         },
                         update = { view ->
                             view.player = viewModel.player
-                            view.resizeMode = when (state.aspectMode) {
-                                1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            // 固定比例（3 起）用拉伸填充，让画面真正变成该比例而不是只加黑边
+                            view.resizeMode = when {
+                                state.aspectMode >= 3 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                state.aspectMode == 1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                state.aspectMode == 2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
                                 else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                             }
                         },
