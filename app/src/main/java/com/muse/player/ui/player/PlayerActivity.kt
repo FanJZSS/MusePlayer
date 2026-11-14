@@ -42,7 +42,12 @@ class PlayerActivity : ComponentActivity() {
                 PlayerScreen(
                     viewModel = viewModel,
                     state = state,
-                    onBack = { onBackPressedDispatcher.onBackPressed() }
+                    // 注意：不能再调用 onBackPressedDispatcher.onBackPressed()，
+                    // 否则会与 PlayerScreen 内的 BackHandler 形成无限递归
+                    onBack = {
+                        viewModel.pauseAndSave()
+                        finish()
+                    }
                 )
             }
         }
