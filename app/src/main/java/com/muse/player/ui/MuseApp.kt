@@ -5,6 +5,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.muse.player.ui.about.AboutScreen
 import com.muse.player.ui.library.FolderScreen
 import com.muse.player.ui.library.LibraryScreen
 import com.muse.player.ui.library.LibraryViewModel
@@ -41,6 +42,9 @@ fun MuseApp() {
         }
         composable("settings") {
             SettingsScreen(navController = navController)
+        }
+        composable("about") {
+            AboutScreen(navController = navController)
         }
     }
 }

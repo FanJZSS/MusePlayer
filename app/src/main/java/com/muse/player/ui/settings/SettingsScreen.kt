@@ -42,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -179,27 +178,12 @@ fun SettingsScreen(navController: NavController) {
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("关于")
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
-                Text(
-                    "Muse Player",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "版本 ${BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "一个本地视频播放器：硬件解码、手势控制、字幕与音轨切换、" +
-                        "倍速播放、画中画、后台播放、网络串流。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(24.dp))
-            }
+            ActionRow(
+                title = "关于 Muse Player",
+                subtitle = "版本 ${BuildConfig.VERSION_NAME} · 开源许可与项目信息",
+                onClick = { navController.navigate("about") }
+            )
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
