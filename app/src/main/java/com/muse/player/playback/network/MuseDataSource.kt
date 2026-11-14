@@ -18,6 +18,7 @@ import jcifs.SmbConstants
 import jcifs.smb.SmbRandomAccessFile
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
+import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
 
@@ -38,6 +39,12 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
     private var ftpStream: InputStream? = null
     private var httpDataSource: DefaultHttpDataSource? = null
     private var fallback: DataSource? = null
+
+    // SMB/FTP 预读缓冲：播放器每次只要求 64KB，若不预读每个小块都要一次网络往返，
+    // 高码率视频就会周期性喂不饱而卡顿。这里一次读 1MB，摊薄往返开销。
+    private val readAheadBuffer = ByteArray(READ_AHEAD_SIZE)
+    private var readAheadPos = 0
+    private var readAheadLen = 0
 
     override fun open(dataSpec: DataSpec): Long {
         closeQuietly()
@@ -72,6 +79,8 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
         val url = NetworkRepository.smbUrl(server, relativePath, directory = false)
         val file = SmbRandomAccessFile(url, "r", SmbConstants.DEFAULT_SHARING, context)
         smbFile = file
+        readAheadPos = 0
+        readAheadLen = 0
         val total = file.length()
         val position = dataSpec.position.coerceAtLeast(0L)
         file.seek(position)
@@ -101,7 +110,7 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
         }
         val input = client.retrieveFileStream(relativePath)
             ?: throw IOException("FTP 无法打开文件：$relativePath")
-        ftpStream = input
+        ftpStream = BufferedInputStream(input, READ_AHEAD_SIZE)
         // 不再额外发送 LIST 查询文件大小：每次拖动都会多一个网络往返，明显拖慢定位
         bytesRemaining = dataSpec.length
     }
@@ -129,6 +138,27 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
         }
     }
 
+    /** 从预读缓冲返回数据，缓冲耗尽时再向服务器发起一次大块读取 */
+    private fun readSmbBuffered(target: ByteArray, offset: Int, length: Int): Int {
+        val file = smbFile ?: return C.RESULT_END_OF_INPUT
+        if (readAheadPos >= readAheadLen) {
+            val want = if (bytesRemaining == C.LENGTH_UNSET.toLong()) {
+                READ_AHEAD_SIZE
+            } else {
+                minOf(READ_AHEAD_SIZE.toLong(), bytesRemaining).toInt()
+            }
+            if (want <= 0) return C.RESULT_END_OF_INPUT
+            val got = file.read(readAheadBuffer, 0, want)
+            if (got <= 0) return C.RESULT_END_OF_INPUT
+            readAheadPos = 0
+            readAheadLen = got
+        }
+        val count = minOf(readAheadLen - readAheadPos, length)
+        System.arraycopy(readAheadBuffer, readAheadPos, target, offset, count)
+        readAheadPos += count
+        return count
+    }
+
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
         if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
@@ -141,7 +171,7 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
         if (maxRead <= 0) return C.RESULT_END_OF_INPUT
 
         val count = when {
-            smbFile != null -> smbFile!!.read(buffer, offset, maxRead)
+            smbFile != null -> readSmbBuffered(buffer, offset, maxRead)
             ftpStream != null -> ftpStream!!.read(buffer, offset, maxRead)
             httpDataSource != null -> httpDataSource!!.read(buffer, offset, maxRead)
             fallback != null -> fallback!!.read(buffer, offset, maxRead)
@@ -165,6 +195,8 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
     private fun closeQuietly() {
         runCatching { smbFile?.close() }
         smbFile = null
+        readAheadPos = 0
+        readAheadLen = 0
 
         runCatching { ftpStream?.close() }
         ftpStream = null
@@ -187,5 +219,9 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
 
     class Factory(private val context: Context) : DataSource.Factory {
         override fun createDataSource(): DataSource = MuseDataSource(context)
+    }
+
+    private companion object {
+        const val READ_AHEAD_SIZE = 1024 * 1024
     }
 }

@@ -67,6 +67,9 @@ internal object NetworkClients {
         props["jcifs.smb.client.connTimeout"] = "15000"
         props["jcifs.smb.client.responseTimeout"] = "20000"
         props["jcifs.smb.client.soTimeout"] = "25000"
+        // 加大 SMB 收发缓冲，提升局域网连续读取吞吐（高码率视频更不容易卡顿）
+        props["jcifs.smb.client.rcv_buf_size"] = "1048576"
+        props["jcifs.smb.client.snd_buf_size"] = "1048576"
         val context = BaseContext(PropertyConfiguration(props))
         if (server.username.isBlank()) return context
 

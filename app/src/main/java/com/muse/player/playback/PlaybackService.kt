@@ -101,12 +101,12 @@ class PlaybackService : MediaSessionService() {
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
-                    15_000, // 最小缓冲
+                    20_000, // 最小缓冲：始终保持约 20 秒已下载数据，抵消局域网波动
                     60_000, // 最大缓冲
-                    600, // 起播所需缓冲
-                    1_000 // 拖动/切换后所需缓冲
+                    1_000, // 起播所需缓冲
+                    2_500 // 卡顿后重新起播所需缓冲，避免刚恢复又立刻卡住
                 )
-                .setBackBuffer(15_000, true)
+                .setBackBuffer(20_000, true)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
         )
