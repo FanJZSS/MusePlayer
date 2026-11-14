@@ -553,12 +553,6 @@ fun PlayerScreen(
                             .clip(RoundedCornerShape(6.dp))
                     )
                 }
-                Text(
-                    text = formatDuration(previewTimeMs),
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
             }
         }
 
