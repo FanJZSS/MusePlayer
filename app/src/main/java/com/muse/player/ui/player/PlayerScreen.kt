@@ -249,6 +249,20 @@ fun PlayerScreen(
         }
     }
 
+    // 控制栏显示时一并显示状态栏和导航栏（虚拟按键），隐藏控制栏时恢复沉浸式
+    LaunchedEffect(controlsVisible, locked) {
+        val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+            ?: return@LaunchedEffect
+        if (controlsVisible || locked) {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+        } else {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
     // 进入后台（含画中画）时隐藏控制栏
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
