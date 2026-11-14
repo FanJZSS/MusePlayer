@@ -13,7 +13,9 @@ data class AppSettings(
     val autoSubtitles: Boolean = true,   // 自动加载同名字幕
     val showHiddenFolders: Boolean = false, // 是否显示已隐藏文件夹
     val hiddenFolders: Set<String> = emptySet(), // 被隐藏的文件夹 bucketId
-    val showSystemHiddenFolders: Boolean = false // 是否扫描并显示以 . 开头的系统隐藏文件夹
+    val showSystemHiddenFolders: Boolean = false, // 是否扫描并显示以 . 开头的系统隐藏文件夹
+    val seekGestureSeconds: Int = 120, // 全屏宽度左右滑动可调节的时长（秒）
+    val decoderMode: Int = 0 // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
 )
 
 object SettingsRepository {
@@ -32,7 +34,9 @@ object SettingsRepository {
             autoSubtitles = sp.getBoolean("auto_subtitles", true),
             showHiddenFolders = sp.getBoolean("show_hidden_folders", false),
             hiddenFolders = sp.getStringSet("hidden_folders", emptySet())?.toSet() ?: emptySet(),
-            showSystemHiddenFolders = sp.getBoolean("show_system_hidden_folders", false)
+            showSystemHiddenFolders = sp.getBoolean("show_system_hidden_folders", false),
+            seekGestureSeconds = sp.getInt("seek_gesture_seconds", 120),
+            decoderMode = sp.getInt("decoder_mode", 0)
         )
     }
 
@@ -76,5 +80,16 @@ object SettingsRepository {
     fun setShowSystemHiddenFolders(value: Boolean) {
         sp.edit().putBoolean("show_system_hidden_folders", value).apply()
         _state.value = _state.value.copy(showSystemHiddenFolders = value)
+    }
+
+    fun setSeekGestureSeconds(value: Int) {
+        val safe = value.coerceIn(30, 300)
+        sp.edit().putInt("seek_gesture_seconds", safe).apply()
+        _state.value = _state.value.copy(seekGestureSeconds = safe)
+    }
+
+    fun setDecoderMode(value: Int) {
+        sp.edit().putInt("decoder_mode", value).apply()
+        _state.value = _state.value.copy(decoderMode = value)
     }
 }

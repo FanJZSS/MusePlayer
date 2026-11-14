@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -33,6 +34,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -152,6 +154,28 @@ fun SettingsScreen(navController: NavController) {
                 checked = settings.autoSubtitles,
                 onCheckedChange = SettingsRepository::setAutoSubtitles
             )
+            SeekSensitivityControl()
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionTitle("解码")
+            DecoderOptionRow(
+                title = "自动（推荐）",
+                subtitle = "优先硬件解码，失败时自动回退到软件解码",
+                selected = settings.decoderMode == 0,
+                onClick = { SettingsRepository.setDecoderMode(0) }
+            )
+            DecoderOptionRow(
+                title = "强制软件解码",
+                subtitle = "兼容性最好，黑屏、花屏或无法播放时可尝试",
+                selected = settings.decoderMode == 1,
+                onClick = { SettingsRepository.setDecoderMode(1) }
+            )
+            DecoderOptionRow(
+                title = "强制硬件解码",
+                subtitle = "性能最好、更省电，解码失败时不回退",
+                selected = settings.decoderMode == 2,
+                onClick = { SettingsRepository.setDecoderMode(2) }
+            )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("关于")
@@ -216,6 +240,70 @@ private fun SwitchRow(
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun SeekSensitivityControl() {
+    val settings by SettingsRepository.state.collectAsStateWithLifecycle()
+    var seconds by remember(settings.seekGestureSeconds) {
+        mutableFloatStateOf(settings.seekGestureSeconds.toFloat())
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("左右滑动调进度灵敏度", modifier = Modifier.weight(1f))
+            Text(
+                text = "${seconds.toInt()} 秒 / 全屏",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = seconds,
+            onValueChange = { seconds = it },
+            onValueChangeFinished = {
+                SettingsRepository.setSeekGestureSeconds(seconds.toInt())
+            },
+            valueRange = 30f..300f
+        )
+        Text(
+            text = "数值越大，滑动同样距离调节的时间越长；默认 120 秒",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun DecoderOptionRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(title)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        RadioButton(selected = selected, onClick = onClick)
     }
 }
 

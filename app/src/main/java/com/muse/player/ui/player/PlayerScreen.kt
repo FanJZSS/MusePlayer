@@ -108,6 +108,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.muse.player.data.SettingsRepository
 import com.muse.player.util.formatDuration
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -350,6 +351,8 @@ fun PlayerScreen(
                         var startBrightness = 0.5f
                         var startVolume = 0
                         var startPosition = 0L
+                        // 全屏宽度滑动可调节的时长，可在设置中调整
+                        var seekRangeMs = 120_000L
                         val width = size.width.toFloat().coerceAtLeast(1f)
                         val height = size.height.toFloat().coerceAtLeast(1f)
                         detectDragGestures(
@@ -360,6 +363,8 @@ fun PlayerScreen(
                                 startBrightness = currentBrightness()
                                 startVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                                 startPosition = viewModel.state.value.positionMs
+                                seekRangeMs =
+                                    SettingsRepository.state.value.seekGestureSeconds * 1000L
                                 if (offset.x < width / 2f) {
                                     gestureHint = GestureHint(
                                         GestureType.BRIGHTNESS,
@@ -419,7 +424,7 @@ fun PlayerScreen(
                                     3 -> {
                                         val duration = viewModel.state.value.durationMs
                                             .takeIf { it > 0 } ?: Long.MAX_VALUE
-                                        val target = (startPosition + (accDx / width * 120_000).toLong())
+                                        val target = (startPosition + (accDx / width * seekRangeMs).toLong())
                                             .coerceIn(0L, duration)
                                         gestureHint = GestureHint(
                                             GestureType.SEEK,
@@ -431,7 +436,7 @@ fun PlayerScreen(
                             onDragEnd = {
                                 if (dragMode == 3) {
                                     val dx = accDx
-                                    val target = startPosition + (dx / width * 120_000).toLong()
+                                    val target = startPosition + (dx / width * seekRangeMs).toLong()
                                     viewModel.seekTo(target)
                                 }
                                 dragMode = 0
