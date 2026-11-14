@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PlayCircleOutline
 import androidx.compose.material.icons.rounded.Visibility
@@ -227,90 +226,87 @@ fun VideoRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FolderRow(
     folder: FolderItem,
     onClick: () -> Unit,
     hidden: Boolean = false,
-    onToggleHidden: (() -> Unit)? = null
+    onToggleHidden: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
+    Box {
+        Row(
             modifier = Modifier
-                .size(56.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { menuOpen = true }
+                )
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            val cover = folder.cover
-            if (cover != null) {
-                VideoThumbnail(cover, Modifier.fillMaxSize())
-            } else {
-                Icon(
-                    Icons.Rounded.Folder,
-                    contentDescription = null,
-                    tint = MuseBlue
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                val cover = folder.cover
+                if (cover != null) {
+                    VideoThumbnail(cover, Modifier.fillMaxSize())
+                } else {
+                    Icon(
+                        Icons.Rounded.Folder,
+                        contentDescription = null,
+                        tint = MuseBlue
+                    )
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = folder.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "${folder.count} 个视频" + if (hidden) " · 已隐藏" else "",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = folder.name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = "${folder.count} 个视频" + if (hidden) " · 已隐藏" else "",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (onToggleHidden != null) {
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(
-                        Icons.Rounded.MoreVert,
-                        contentDescription = "文件夹操作",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                DropdownMenu(
-                    expanded = menuOpen,
-                    onDismissRequest = { menuOpen = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(if (hidden) "取消隐藏" else "隐藏此文件夹") },
-                        leadingIcon = {
-                            Icon(
-                                if (hidden) Icons.Rounded.Visibility
-                                else Icons.Rounded.VisibilityOff,
-                                contentDescription = null
-                            )
-                        },
-                        onClick = {
-                            menuOpen = false
-                            onToggleHidden()
-                        }
-                    )
-                }
-            }
-        } else {
             Icon(
                 Icons.Rounded.PlayCircleOutline,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        // 长按文件夹时在右侧弹出操作菜单
+        Box(modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp)) {
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(if (hidden) "取消隐藏" else "隐藏此文件夹") },
+                    leadingIcon = {
+                        Icon(
+                            if (hidden) Icons.Rounded.Visibility
+                            else Icons.Rounded.VisibilityOff,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onToggleHidden()
+                    }
+                )
+            }
         }
     }
 }
