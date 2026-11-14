@@ -10,10 +10,16 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.muse.player.data.SettingsRepository
 import com.muse.player.playback.network.MuseDataSource
+import com.muse.player.playback.network.SchemeRoutingDataSourceFactory
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +40,23 @@ class PlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private var appliedDecoderMode = SettingsRepository.state.value.decoderMode
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    // 网络视频磁盘缓存：看过的段落再次拖动时直接读本地，不再重新下载
+    private var mediaCache: SimpleCache? = null
+    private var cacheDatabase: StandaloneDatabaseProvider? = null
+
+    private fun obtainCache(): SimpleCache {
+        mediaCache?.let { return it }
+        val database = StandaloneDatabaseProvider(this)
+        val cache = SimpleCache(
+            File(cacheDir, "media_cache"),
+            LeastRecentlyUsedCacheEvictor(256L * 1024 * 1024),
+            database
+        )
+        cacheDatabase = database
+        mediaCache = cache
+        return cache
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -62,9 +85,16 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun buildPlayer(): ExoPlayer = ExoPlayer.Builder(this)
+    private fun buildPlayer(): ExoPlayer {
+        val upstream = MuseDataSource.Factory(this)
+        val cached = CacheDataSource.Factory()
+            .setCache(obtainCache())
+            .setUpstreamDataSourceFactory(upstream)
+            // 缓存读写异常时自动回退到直连，避免缓存损坏导致无法播放
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        return ExoPlayer.Builder(this)
         .setMediaSourceFactory(
-            DefaultMediaSourceFactory(MuseDataSource.Factory(this))
+            DefaultMediaSourceFactory(SchemeRoutingDataSourceFactory(upstream, cached))
         )
         .setRenderersFactory(buildRenderersFactory())
         // 调整缓冲策略：局域网拖动后尽快恢复播放，并保留最近 15 秒已下载数据
@@ -91,6 +121,7 @@ class PlaybackService : MediaSessionService() {
         .setSeekBackIncrementMs(10_000)
         .setSeekForwardIncrementMs(10_000)
         .build()
+    }
 
     private fun buildRenderersFactory(): DefaultRenderersFactory {
         val mode = SettingsRepository.state.value.decoderMode
@@ -155,6 +186,10 @@ class PlaybackService : MediaSessionService() {
         }
         mediaSession = null
         player = null
+        runCatching { mediaCache?.release() }
+        mediaCache = null
+        runCatching { cacheDatabase?.close() }
+        cacheDatabase = null
         super.onDestroy()
     }
 
