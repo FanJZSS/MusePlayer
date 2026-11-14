@@ -11,6 +11,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -93,13 +96,20 @@ class MediaRepository(private val context: Context) {
             scanDir(root, depth = 0, insideHidden = false, budget = budget, out = result)
             if (budget[0] <= 0) break
         }
-        // MediaStore 不索引隐藏目录，时长/分辨率需要逐个读取元数据；分片并发，避免大量隐藏视频时卡住
-        coroutineScope {
-            result.chunked(4).map { chunk ->
-                async { chunk.map { it.withFileMetadata() } }
-            }.awaitAll().flatten()
-        }
+        result
     }
+
+    /**
+     * 逐个补齐隐藏视频的时长与分辨率。
+     * 元数据解析较慢，交给调用方异步收集，避免拖慢媒体库首屏加载。
+     */
+    fun hiddenMetadataUpdates(items: List<VideoItem>): Flow<VideoItem> = channelFlow {
+        items.chunked(4).forEach { chunk ->
+            coroutineScope {
+                chunk.map { item -> async { item.withFileMetadata() } }.awaitAll()
+            }.forEach { send(it) }
+        }
+    }.flowOn(Dispatchers.IO)
 
     private fun externalRoots(): List<File> {
         val roots = LinkedHashSet<File>()

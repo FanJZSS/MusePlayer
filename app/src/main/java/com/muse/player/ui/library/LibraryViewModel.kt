@@ -10,6 +10,7 @@ import com.muse.player.data.MediaRepository
 import com.muse.player.data.SettingsRepository
 import com.muse.player.data.SortField
 import com.muse.player.data.VideoItem
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +40,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
 
     private var allVideos: List<VideoItem> = emptyList()
+    private var metadataJob: Job? = null
     private var lastShowSystemHidden = SettingsRepository.state.value.showSystemHiddenFolders
 
     init {
@@ -81,6 +83,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
             rebuild()
             _state.update { it.copy(loading = false) }
+            // 隐藏视频的时长/分辨率后台补齐，边补边刷新列表，不阻塞首屏
+            metadataJob?.cancel()
+            metadataJob = if (hidden.isEmpty()) null else viewModelScope.launch {
+                repository.hiddenMetadataUpdates(hidden).collect { updated ->
+                    allVideos = allVideos.map { if (it.id == updated.id) updated else it }
+                    rebuild()
+                }
+            }
         }
     }
 
