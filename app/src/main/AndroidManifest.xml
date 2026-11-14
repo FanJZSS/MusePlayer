@@ -41,17 +41,23 @@
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.Muse.Player"
             tools:ignore="AppLinkUrlError,DiscouragedApi">
-            <!-- 由其他应用“打开方式”调起播放 -->
+            <!-- 由其他应用“打开方式”调起播放（不带 URI、只按 MIME 查询播放器的场景） -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/vnd.apple.mpegurl" />
                 <data android:mimeType="application/x-mpegurl" />
+                <data android:mimeType="application/x-mpegURL" />
+                <data android:mimeType="application/mpegurl" />
+                <data android:mimeType="audio/mpegurl" />
+                <data android:mimeType="audio/x-mpegurl" />
                 <data android:mimeType="application/dash+xml" />
             </intent-filter>
 
-            <!-- 由其他应用“打开方式”调起播放（带 URI 与 MIME 的调用） -->
+            <!-- 带 URI 的“打开方式”调用，覆盖本地与网络地址（与 VLC 的做法一致，接受任意 MIME） -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -60,10 +66,22 @@
                 <data android:scheme="http" />
                 <data android:scheme="https" />
                 <data android:scheme="rtsp" />
-                <data android:mimeType="video/*" />
-                <data android:mimeType="application/vnd.apple.mpegurl" />
-                <data android:mimeType="application/x-mpegurl" />
-                <data android:mimeType="application/dash+xml" />
+                <data android:scheme="rtp" />
+                <data android:scheme="rtmp" />
+                <data android:scheme="mms" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+
+            <!-- 部分平台传 URL 时不带 MIME 类型，这里仅按 scheme 匹配 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:scheme="rtsp" />
+                <data android:scheme="rtp" />
+                <data android:scheme="rtmp" />
+                <data android:scheme="mms" />
             </intent-filter>
 
             <!-- 浏览器/其他应用中的网络流媒体链接（m3u8、mpd 等） -->
@@ -96,8 +114,10 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="video/*" />
+                <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/vnd.apple.mpegurl" />
                 <data android:mimeType="application/x-mpegurl" />
+                <data android:mimeType="application/x-mpegURL" />
             </intent-filter>
 
             <!-- 由其他应用“分享”多个视频到本应用 -->
@@ -105,6 +125,7 @@
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="video/*" />
+                <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/vnd.apple.mpegurl" />
                 <data android:mimeType="application/x-mpegurl" />
             </intent-filter>
