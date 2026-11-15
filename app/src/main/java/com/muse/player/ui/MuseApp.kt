@@ -6,7 +6,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.muse.player.ui.about.AboutScreen
-import com.muse.player.ui.library.FolderScreen
 import com.muse.player.ui.library.LibraryScreen
 import com.muse.player.ui.library.LibraryViewModel
 import com.muse.player.ui.network.NetworkViewModel
@@ -24,13 +23,6 @@ fun MuseApp() {
                 navController = navController,
                 viewModel = libraryViewModel,
                 networkViewModel = networkViewModel
-            )
-        }
-        composable("folder/{bucketId}") { entry ->
-            FolderScreen(
-                navController = navController,
-                viewModel = libraryViewModel,
-                bucketId = entry.arguments?.getString("bucketId").orEmpty()
             )
         }
         composable("settings") {

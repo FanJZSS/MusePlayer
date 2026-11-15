@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings as AndroidSettings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -35,6 +36,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -210,6 +212,14 @@ fun LibraryScreen(
     var mediaMode by rememberSaveable {
         mutableIntStateOf(if (SettingsRepository.state.value.folderViewMode) 1 else 0)
     }
+    // 文件夹在当前分栏内展开，导航栏与顶栏始终可见
+    var openFolderId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = openFolderId != null) {
+        openFolderId = null
+        viewModel.setQuery("")
+    }
+
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val pagerState = rememberPagerState(initialPage = state.tab) { tabs.size }
 
@@ -229,8 +239,26 @@ fun LibraryScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 ),
+                navigationIcon = {
+                    if (openFolderId != null) {
+                        IconButton(onClick = {
+                            openFolderId = null
+                            viewModel.setQuery("")
+                        }) {
+                            Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
+                        }
+                    }
+                },
                 title = {
-                    Text("Muse Player", fontWeight = FontWeight.SemiBold)
+                    val folderName = openFolderId?.let { id ->
+                        state.folders.firstOrNull { it.bucketId == id }?.name
+                    }
+                    Text(
+                        text = folderName ?: "Muse Player",
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 },
                 actions = {
                     IconButton(onClick = {
@@ -429,7 +457,15 @@ fun LibraryScreen(
             ) { page ->
                 when (page) {
                 0 -> {
-                    if (mediaMode == 1) {
+                    val openFolder = openFolderId
+                    if (mediaMode == 1 && openFolder != null) {
+                        FolderContent(
+                            viewModel = viewModel,
+                            bucketId = openFolder,
+                            query = state.query,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else if (mediaMode == 1) {
                         if (state.folders.isEmpty()) {
                             EmptyState("没有文件夹", "视频会按照所在目录归入文件夹")
                         } else {
@@ -441,9 +477,8 @@ fun LibraryScreen(
                                     FolderRow(
                                         folder = folder,
                                         onClick = {
-                                            navController.navigate(
-                                                "folder/${Uri.encode(folder.bucketId)}"
-                                            )
+                                            viewModel.setQuery("")
+                                            openFolderId = folder.bucketId
                                         },
                                         hidden = folder.bucketId in state.hiddenFolderIds,
                                         onLongClick = { actionFolder = folder }
@@ -648,7 +683,10 @@ fun LibraryScreen(
                 },
                 if (openFolder) {
                     MenuAction("打开所在文件夹", Icons.Rounded.FolderOpen) {
-                        navController.navigate("folder/${Uri.encode(video.bucketId)}")
+                        mediaMode = 1
+                        SettingsRepository.setFolderViewMode(true)
+                        viewModel.setQuery("")
+                        openFolderId = video.bucketId
                     }
                 } else {
                     null
