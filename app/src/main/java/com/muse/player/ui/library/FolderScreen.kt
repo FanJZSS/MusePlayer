@@ -222,7 +222,7 @@ fun FolderScreen(
                     }
                 )
             }
-            if (wide || settings.gridViewMode) {
+            if (settings.gridViewMode) {
                 LazyVerticalGrid(
                     columns = if (wide) GridCells.Adaptive(200.dp) else GridCells.Fixed(2),
                     modifier = Modifier
@@ -233,6 +233,24 @@ fun FolderScreen(
                 ) {
                     gridItems(videos, key = { it.id }) { video ->
                         VideoCard(
+                            video = video,
+                            progressMs = progressMap[video.uri.toString()] ?: 0L,
+                            onClick = { play(video) },
+                            onLongClick = { actionVideo = video }
+                        )
+                    }
+                }
+            } else if (wide) {
+                // 宽屏列表视图：多列排布
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(360.dp),
+                    modifier = Modifier
+                        .fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp, horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    gridItems(videos, key = { it.id }) { video ->
+                        VideoRow(
                             video = video,
                             progressMs = progressMap[video.uri.toString()] ?: 0L,
                             onClick = { play(video) },
