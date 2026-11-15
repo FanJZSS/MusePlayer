@@ -25,6 +25,7 @@ import com.muse.player.data.PlayEntry
 import com.muse.player.data.SettingsRepository
 import com.muse.player.data.SubtitleFinder
 import com.muse.player.playback.PlaybackService
+import com.muse.player.playback.network.MuseDataSource
 import com.muse.player.util.NetworkTitles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,6 +38,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 data class TrackOption(
     val label: String,
@@ -82,6 +85,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var tickCount = 0
     private var entries: List<PlayEntry> = emptyList()
 
+    // 已经按 HLS 重试过的地址，避免反复重试
+    private val hlsRetriedUris = mutableSetOf<String>()
+
     private data class PendingStart(val entries: List<PlayEntry>, val index: Int, val positionMs: Long)
 
     private val listener = object : Player.Listener {
@@ -90,9 +96,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            if (retryAsHls(error)) return
             _state.update {
                 it.copy(
-                    error = "播放失败：${error.errorCodeName}",
+                    error = friendlyError(error),
                     isBuffering = false
                 )
             }
@@ -148,7 +155,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         // 字幕文件查找涉及磁盘遍历，放到 IO 线程，避免拖慢起播
         startJob?.cancel()
         startJob = viewModelScope.launch {
-            val items = withContext(Dispatchers.IO) { entries.map { buildMediaItem(it) } }
+            val items = withContext(Dispatchers.IO) {
+                entries.mapIndexed { i, entry -> buildMediaItem(entry, probeMime = i == safeIndex) }
+            }
             val current = player ?: return@launch
             current.setMediaItems(items, safeIndex, startPosition)
             current.prepare()
@@ -157,7 +166,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun buildMediaItem(entry: PlayEntry): MediaItem {
+    private fun buildMediaItem(entry: PlayEntry, probeMime: Boolean = false): MediaItem {
         val metadata = MediaMetadata.Builder().setArtist("Muse Player")
         // 网络视频的标题若只是占位（通用文件名或域名），不写死标题，
         // 让播放器读取流内的元数据（如 ID3 标题）来展示真实名称
@@ -169,7 +178,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             .setMediaMetadata(metadata.build())
 
         if (entry.isNetwork) {
-            inferMimeType(entry.uri)?.let { builder.setMimeType(it) }
+            val mime = inferMimeType(entry.uri) ?: if (probeMime) probeMimeType(entry.uri) else null
+            mime?.let { builder.setMimeType(it) }
         }
 
         val subtitlePaths = LinkedHashSet<String>()
@@ -213,6 +223,117 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             clean.endsWith(".webm") -> MimeTypes.VIDEO_WEBM
             else -> null
         }
+    }
+
+    /**
+     * 地址没有可用后缀时（TVBox 等应用常给接口/代理地址），
+     * 发一个 2KB 的探测请求，按 Content-Type 与文件头判断真实格式。
+     */
+    private fun probeMimeType(url: String): String? {
+        val lower = url.lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return null
+        return try {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 8_000
+                readTimeout = 8_000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", MuseDataSource.USER_AGENT)
+                setRequestProperty("Range", "bytes=0-2047")
+            }
+            try {
+                val contentType = connection.contentType?.lowercase().orEmpty()
+                val head = ByteArray(2048)
+                var length = 0
+                connection.inputStream.use { input ->
+                    while (length < head.size) {
+                        val read = input.read(head, length, head.size - length)
+                        if (read <= 0) break
+                        length += read
+                    }
+                }
+                detectMimeType(contentType, head, length)
+            } finally {
+                connection.disconnect()
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun detectMimeType(contentType: String, head: ByteArray, length: Int): String? {
+        if (length <= 0) return null
+        val text = String(head, 0, length, Charsets.ISO_8859_1)
+        val isTs = length > 376 &&
+            (head[0].toInt() and 0xFF) == 0x47 && (head[188].toInt() and 0xFF) == 0x47
+        val isMatroska = length > 4 &&
+            (head[0].toInt() and 0xFF) == 0x1A &&
+            (head[1].toInt() and 0xFF) == 0x45 &&
+            (head[2].toInt() and 0xFF) == 0xDF &&
+            (head[3].toInt() and 0xFF) == 0xA3
+        return when {
+            text.startsWith("#EXTM3U") || contentType.contains("mpegurl") ->
+                MimeTypes.APPLICATION_M3U8
+            contentType.contains("dash+xml") ||
+                (text.trimStart().startsWith("<?xml") && text.contains("<MPD")) ->
+                MimeTypes.APPLICATION_MPD
+            isTs || contentType.contains("mp2t") -> MimeTypes.VIDEO_MP2T
+            isMatroska -> MimeTypes.VIDEO_MATROSKA
+            length > 8 && text.substring(4, 8) == "ftyp" -> MimeTypes.VIDEO_MP4
+            contentType.contains("video/mp4") -> MimeTypes.VIDEO_MP4
+            contentType.contains("video/webm") -> MimeTypes.VIDEO_WEBM
+            else -> null
+        }
+    }
+
+    /** 无法识别容器且地址是网络地址时，按 HLS 重新构建一次并重试（每个地址只尝试一次） */
+    private fun retryAsHls(error: PlaybackException): Boolean {
+        if (error.errorCode != PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED) return false
+        val controller = player ?: return false
+        val item = controller.currentMediaItem ?: return false
+        val uri = item.localConfiguration?.uri?.toString() ?: return false
+        if (!uri.startsWith("http://") && !uri.startsWith("https://")) return false
+        if (item.localConfiguration?.mimeType == MimeTypes.APPLICATION_M3U8) return false
+        if (!hlsRetriedUris.add(uri)) return false
+
+        val index = controller.currentMediaItemIndex
+        val position = controller.currentPosition
+        val items = (0 until controller.mediaItemCount)
+            .map { controller.getMediaItemAt(it) }
+            .toMutableList()
+        if (index !in items.indices) return false
+        items[index] = item.buildUpon().setMimeType(MimeTypes.APPLICATION_M3U8).build()
+        controller.setMediaItems(items, index, position)
+        controller.prepare()
+        controller.playWhenReady = true
+        _state.update { it.copy(error = null, isBuffering = true) }
+        return true
+    }
+
+    /** 把错误码翻译成可读原因，网络类错误附带底层异常信息，便于判断是源站问题还是链接失效 */
+    private fun friendlyError(error: PlaybackException): String {
+        val reason = when (error.errorCode) {
+            PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> "网络请求失败"
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> "无法连接到服务器"
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "连接服务器超时"
+            PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE -> "服务器返回的内容不是视频"
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "服务器返回错误状态码"
+            PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> "文件不存在或地址已失效"
+            PlaybackException.ERROR_CODE_IO_NO_PERMISSION -> "没有访问权限"
+            PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED -> "系统禁止播放明文 HTTP 地址"
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED -> "视频文件损坏或格式异常"
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> "无法识别视频格式（该地址可能不是直链视频）"
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "播放列表格式异常"
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> "不支持该播放列表格式"
+            else -> error.errorCodeName
+        }
+        val detail = if (error.errorCode in 2000..2999) {
+            generateSequence(error.cause) { it.cause }
+                .mapNotNull { it.message?.trim()?.takeIf(String::isNotEmpty) }
+                .firstOrNull()
+        } else {
+            null
+        }
+        return if (detail == null) "播放失败：$reason" else "播放失败：$reason（${detail.take(80)}）"
     }
 
     private fun refresh(player: Player) {

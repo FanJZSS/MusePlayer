@@ -53,7 +53,7 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
         uri = dataSpec.uri
         val resolved = NetworkRepository.resolve(dataSpec.uri)
         if (resolved == null) {
-            val delegate = DefaultDataSource.Factory(context).createDataSource()
+            val delegate = DefaultDataSource.Factory(context, httpDataSourceFactory()).createDataSource()
             fallback = delegate
             val length = delegate.open(dataSpec)
             transferStarted(dataSpec)
@@ -122,10 +122,7 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
 
     private fun openWebDav(server: NetworkServer, relativePath: String, dataSpec: DataSpec) {
         val url = NetworkRepository.webDavUrl(server, relativePath, directory = false)
-        val factory = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(30_000)
-            .setAllowCrossProtocolRedirects(true)
+        val factory = httpDataSourceFactory()
         NetworkRepository.basicAuthHeader(server)?.let {
             factory.setDefaultRequestProperties(mapOf("Authorization" to it))
         }
@@ -226,7 +223,22 @@ class MuseDataSource(private val context: Context) : BaseDataSource(/* isNetwork
         override fun createDataSource(): DataSource = MuseDataSource(context)
     }
 
-    private companion object {
-        const val READ_AHEAD_SIZE = 1024 * 1024
+    companion object {
+        private const val READ_AHEAD_SIZE = 1024 * 1024
+
+        /**
+         * 统一的 User-Agent。ExoPlayer 默认 UA 会被部分流媒体源站拒绝（返回 403 或网页），
+         * 表现为「无法识别容器格式」或「IO 错误」，因此统一伪装成常见移动端浏览器。
+         */
+        const val USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/119.0.0.0 Mobile Safari/537.36"
+
+        fun httpDataSourceFactory(): DefaultHttpDataSource.Factory =
+            DefaultHttpDataSource.Factory()
+                .setUserAgent(USER_AGENT)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(30_000)
+                .setAllowCrossProtocolRedirects(true)
     }
 }
