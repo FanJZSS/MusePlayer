@@ -401,6 +401,15 @@ fun LibraryScreen(
                             label = { Text(tab.title) }
                         )
                     }
+                    // 宽屏端在导航栏底部提供设置入口
+                    Spacer(Modifier.weight(1f))
+                    NavigationRailItem(
+                        selected = false,
+                        onClick = { navController.navigate("settings") },
+                        icon = { Icon(Icons.Rounded.Settings, contentDescription = "设置") },
+                        label = { Text("设置") }
+                    )
+                    Spacer(Modifier.height(8.dp))
                 }
             }
 
