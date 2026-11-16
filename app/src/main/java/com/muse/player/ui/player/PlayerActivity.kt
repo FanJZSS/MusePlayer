@@ -34,6 +34,13 @@ class PlayerActivity : ComponentActivity() {
 
     // 是否刚退出画中画：回全屏时会在 onResume 清掉，只有界面被结束才保留
     private var pipExited = false
+    private val handler = Handler(Looper.getMainLooper())
+    // 退出小窗后延迟确认是否回到前台，没回来才按「关闭小窗」处理
+    private val pipPauseCheck = Runnable {
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            viewModel.pauseAndSave()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -276,21 +283,24 @@ class PlayerActivity : ComponentActivity() {
         if (!isInPictureInPictureMode) {
             // 「关闭小窗」和「恢复全屏」都会走到这里：恢复全屏会紧接着 onResume，
             // 关闭小窗则不会。稍后检查一次前台状态来区分，避免依赖 isFinishing。
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                    viewModel.pauseAndSave()
-                }
-            }, 150)
+            schedulePipPauseCheck()
         }
+    }
+
+    private fun schedulePipPauseCheck() {
+        handler.removeCallbacks(pipPauseCheck)
+        handler.postDelayed(pipPauseCheck, 600)
     }
 
     override fun onResume() {
         super.onResume()
         // 从小窗恢复成全屏时继续播放
         pipExited = false
+        handler.removeCallbacks(pipPauseCheck)
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(pipPauseCheck)
         // 小窗被关闭时界面会被销毁，但播放由 MediaSessionService 承载，不会自动停。
         // 后台播放关闭时直接结束播放服务，确保界面消失后不再出声。
         if (!isChangingConfigurations && !SettingsRepository.state.value.backgroundPlay) {
@@ -303,6 +313,8 @@ class PlayerActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) return
+        // 正在从小窗恢复全屏：交给 onResume 与延迟检查判定，避免切换过程中被暂停
+        if (pipExited) return
         if (!SettingsRepository.state.value.backgroundPlay) {
             // 在 onPause 就暂停，比等到 onStop 更早，避免退出时还有一两秒声音
             viewModel.pauseAndSave()
@@ -313,7 +325,7 @@ class PlayerActivity : ComponentActivity() {
         super.onStop()
         // 小窗被关闭时 Activity 会直接结束（isFinishing 不一定为 true），
         // 此时播放服务仍在运行，必须主动暂停，否则关闭小窗后还能听到后台声音
-        if (isFinishing || pipExited) {
+        if (isFinishing) {
             viewModel.pauseAndSave()
             return
         }
@@ -323,6 +335,13 @@ class PlayerActivity : ComponentActivity() {
             if (!SettingsRepository.state.value.backgroundPlay) {
                 viewModel.pauseAndSave()
             }
+            return
+        }
+        if (pipExited) {
+            // 刚退出小窗：恢复全屏会紧接着 onResume（取消这次检查），
+            // 关闭小窗则界面会销毁（onDestroy 停止服务）。这里立即暂停会让
+            // 从小窗恢复全屏时先被暂停一下，所以改为延迟确认
+            schedulePipPauseCheck()
             return
         }
         if (SettingsRepository.state.value.backgroundPlay) {
