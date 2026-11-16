@@ -277,7 +277,46 @@ fun BrowseTab(
                 }
             }
 
-            entries.isEmpty() -> EmptyState("空文件夹", "这里没有子文件夹或视频文件")
+            entries.isEmpty() -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                val needAllFiles =
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !allFilesAccess
+                Text(
+                    text = if (needAllFiles) "这里看不到文件" else "空文件夹",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = if (needAllFiles) {
+                        // 没有「所有文件访问权限」时，系统会隐藏未被媒体库收录的文件，
+                        // 目录看起来是空的
+                        "浏览全部文件需要「所有文件访问权限」，授权后即可显示"
+                    } else {
+                        "这里没有子文件夹或视频文件"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = currentPath,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                if (needAllFiles) {
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { openAllFilesAccess(context) }) {
+                        Text("前往授权")
+                    }
+                }
+            }
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp)
