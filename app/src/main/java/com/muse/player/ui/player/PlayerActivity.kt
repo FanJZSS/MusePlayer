@@ -265,6 +265,11 @@ class PlayerActivity : ComponentActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        // 点小窗右上角关闭时，系统会销毁 Activity（isFinishing），
+        // 但播放由 MediaSessionService 承载，不会随界面消失而停止，这里主动暂停
+        if (!isInPictureInPictureMode && isFinishing) {
+            viewModel.pauseAndSave()
+        }
     }
 
     override fun onPause() {
@@ -278,6 +283,12 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        // 小窗被关闭时 Activity 会直接结束（isFinishing），此时播放服务仍在运行，
+        // 必须主动暂停，否则关闭小窗后还能听到后台声音
+        if (isFinishing) {
+            viewModel.pauseAndSave()
+            return
+        }
         if (isInPictureInPictureMode) return
         if (SettingsRepository.state.value.backgroundPlay) {
             viewModel.saveProgress()
