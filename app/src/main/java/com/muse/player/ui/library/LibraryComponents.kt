@@ -1,6 +1,7 @@
 package com.muse.player.ui.library
 
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -34,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +51,8 @@ import androidx.compose.ui.unit.sp
 import com.muse.player.data.FolderItem
 import com.muse.player.data.HistoryEntry
 import com.muse.player.data.VideoItem
+import com.muse.player.data.network.NetworkRepository
+import com.muse.player.data.network.ServerType
 import com.muse.player.ui.theme.MuseBlue
 import com.muse.player.util.ThumbnailLoader
 import com.muse.player.util.formatDuration
@@ -404,6 +408,17 @@ fun HistoryRow(
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            val location = remember(entry.uri, video?.path) { historyLocation(entry, video) }
+            if (location.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = location,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
         }
         IconButton(onClick = onRemove) {
             Icon(
@@ -414,6 +429,23 @@ fun HistoryRow(
             )
         }
     }
+}
+
+/** 历史记录的可读位置：本地文件给真实路径，网络条目给协议与完整地址 */
+private fun historyLocation(entry: HistoryEntry, video: VideoItem?): String {
+    val uri = entry.uri
+    val resolved = NetworkRepository.resolve(Uri.parse(uri))
+    if (resolved != null) {
+        val (server, path) = resolved
+        val address = when (server.type) {
+            ServerType.SMB -> NetworkRepository.smbUrl(server, path, directory = false)
+            ServerType.FTP -> "ftp://${server.host}:${server.port}/$path"
+            ServerType.WEBDAV -> NetworkRepository.webDavUrl(server, path, directory = false)
+        }
+        return "${server.type.label} · $address"
+    }
+    video?.path?.takeIf { it.isNotBlank() }?.let { return it }
+    return if (uri.startsWith("file://")) Uri.parse(uri).path ?: uri else uri
 }
 
 @Composable
