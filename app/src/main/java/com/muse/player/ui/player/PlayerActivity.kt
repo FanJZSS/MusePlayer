@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import com.muse.player.data.PlayEntry
 import com.muse.player.data.SettingsRepository
+import com.muse.player.playback.PlaybackService
 import com.muse.player.ui.theme.MuseTheme
 import com.muse.player.util.NetworkTitles
 
@@ -290,9 +291,11 @@ class PlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // 小窗被关闭时部分系统不会走 onStop 的正常分支，这里在 ViewModel 释放控制器之前兜底暂停
-        if (isFinishing || pipExited) {
+        // 小窗被关闭时界面会被销毁，但播放由 MediaSessionService 承载，不会自动停。
+        // 后台播放关闭时直接结束播放服务，确保界面消失后不再出声。
+        if (!isChangingConfigurations && !SettingsRepository.state.value.backgroundPlay) {
             viewModel.pauseAndSave()
+            stopService(Intent(this, PlaybackService::class.java))
         }
         super.onDestroy()
     }
