@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Rational
 import android.view.WindowManager
@@ -17,6 +19,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.core.content.IntentCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import com.muse.player.data.PlayEntry
@@ -269,10 +272,14 @@ class PlayerActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipExited = !isInPictureInPictureMode
-        // 点小窗右上角关闭时，系统会销毁 Activity（isFinishing），
-        // 但播放由 MediaSessionService 承载，不会随界面消失而停止，这里主动暂停
-        if (!isInPictureInPictureMode && isFinishing) {
-            viewModel.pauseAndSave()
+        if (!isInPictureInPictureMode) {
+            // 「关闭小窗」和「恢复全屏」都会走到这里：恢复全屏会紧接着 onResume，
+            // 关闭小窗则不会。稍后检查一次前台状态来区分，避免依赖 isFinishing。
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    viewModel.pauseAndSave()
+                }
+            }, 400)
         }
     }
 
@@ -280,6 +287,14 @@ class PlayerActivity : ComponentActivity() {
         super.onResume()
         // 从小窗恢复成全屏时继续播放
         pipExited = false
+    }
+
+    override fun onDestroy() {
+        // 小窗被关闭时部分系统不会走 onStop 的正常分支，这里在 ViewModel 释放控制器之前兜底暂停
+        if (isFinishing || pipExited) {
+            viewModel.pauseAndSave()
+        }
+        super.onDestroy()
     }
 
     override fun onPause() {
