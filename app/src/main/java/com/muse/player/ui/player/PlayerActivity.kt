@@ -280,7 +280,7 @@ class PlayerActivity : ComponentActivity() {
                 if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                     viewModel.pauseAndSave()
                 }
-            }, 400)
+            }, 150)
         }
     }
 
@@ -317,7 +317,14 @@ class PlayerActivity : ComponentActivity() {
             viewModel.pauseAndSave()
             return
         }
-        if (isInPictureInPictureMode) return
+        if (isInPictureInPictureMode) {
+            // 小窗正常悬浮时 Activity 只是暂停、不会走 onStop；
+            // 走到这里说明小窗已被关闭或隐藏，立即暂停避免残留在后台出声
+            if (!SettingsRepository.state.value.backgroundPlay) {
+                viewModel.pauseAndSave()
+            }
+            return
+        }
         if (SettingsRepository.state.value.backgroundPlay) {
             viewModel.saveProgress()
         } else {
