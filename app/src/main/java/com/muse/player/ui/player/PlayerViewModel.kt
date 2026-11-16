@@ -498,6 +498,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             else -> Player.REPEAT_MODE_OFF
         }
         controller.repeatMode = next
+        SettingsRepository.setRepeatMode(next)
         _state.update { it.copy(repeatMode = next) }
     }
 
@@ -506,6 +507,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val controller = player ?: return
         val enabled = !controller.shuffleModeEnabled
         controller.shuffleModeEnabled = enabled
+        SettingsRepository.setShuffleEnabled(enabled)
         _state.update { it.copy(shuffleEnabled = enabled) }
     }
 

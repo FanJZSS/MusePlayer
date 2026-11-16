@@ -150,6 +150,12 @@ class PlaybackService : MediaSessionService() {
         .setSeekBackIncrementMs(10_000)
         .setSeekForwardIncrementMs(10_000)
         .build()
+        .apply {
+            // 沿用上次退出时的循环模式与随机播放状态
+            val settings = SettingsRepository.state.value
+            repeatMode = settings.repeatMode
+            shuffleModeEnabled = settings.shuffleEnabled
+        }
     }
 
     private fun buildRenderersFactory(): DefaultRenderersFactory {

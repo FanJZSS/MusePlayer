@@ -24,7 +24,9 @@ data class AppSettings(
     val showMediaNotification: Boolean = false, // 通知栏媒体播放卡片（默认隐藏）
     val customAspectWidth: Int = 16, // 自定义画面比例的宽
     val customAspectHeight: Int = 9, // 自定义画面比例的高
-    val decoderMode: Int = 0 // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
+    val decoderMode: Int = 0, // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
+    val repeatMode: Int = 0, // 0 顺序播放, 1 单曲循环, 2 列表循环
+    val shuffleEnabled: Boolean = false // 随机播放
 )
 
 object SettingsRepository {
@@ -54,7 +56,9 @@ object SettingsRepository {
             showMediaNotification = sp.getBoolean("media_notification", false),
             customAspectWidth = sp.getInt("custom_aspect_width", 16),
             customAspectHeight = sp.getInt("custom_aspect_height", 9),
-            decoderMode = sp.getInt("decoder_mode", 0)
+            decoderMode = sp.getInt("decoder_mode", 0),
+            repeatMode = sp.getInt("repeat_mode", 0),
+            shuffleEnabled = sp.getBoolean("shuffle_enabled", false)
         )
     }
 
@@ -155,5 +159,15 @@ object SettingsRepository {
     fun setDecoderMode(value: Int) {
         sp.edit().putInt("decoder_mode", value).apply()
         _state.value = _state.value.copy(decoderMode = value)
+    }
+
+    fun setRepeatMode(value: Int) {
+        sp.edit().putInt("repeat_mode", value).apply()
+        _state.value = _state.value.copy(repeatMode = value)
+    }
+
+    fun setShuffleEnabled(value: Boolean) {
+        sp.edit().putBoolean("shuffle_enabled", value).apply()
+        _state.value = _state.value.copy(shuffleEnabled = value)
     }
 }
