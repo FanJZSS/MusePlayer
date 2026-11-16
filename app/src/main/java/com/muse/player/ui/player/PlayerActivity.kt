@@ -269,7 +269,13 @@ class PlayerActivity : ComponentActivity() {
             .setAspectRatio(ratio)
             .build()
         try {
-            enterPictureInPictureMode(params)
+            if (enterPictureInPictureMode(params)) {
+                // 小窗背后应该是桌面，否则会停留在本应用的媒体库界面
+                val home = Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_HOME)
+                    .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(home)
+            }
         } catch (_: Exception) {
         }
     }
