@@ -28,6 +28,9 @@ class PlayerActivity : ComponentActivity() {
 
     private val viewModel: PlayerViewModel by viewModels()
 
+    // 是否刚退出画中画：回全屏时会在 onResume 清掉，只有界面被结束才保留
+    private var pipExited = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 播放器始终是深色背景，强制状态栏/导航栏使用浅色图标，避免系统跟随日间模式变黑看不清
@@ -265,11 +268,18 @@ class PlayerActivity : ComponentActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        pipExited = !isInPictureInPictureMode
         // 点小窗右上角关闭时，系统会销毁 Activity（isFinishing），
         // 但播放由 MediaSessionService 承载，不会随界面消失而停止，这里主动暂停
         if (!isInPictureInPictureMode && isFinishing) {
             viewModel.pauseAndSave()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从小窗恢复成全屏时继续播放
+        pipExited = false
     }
 
     override fun onPause() {
@@ -283,9 +293,9 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        // 小窗被关闭时 Activity 会直接结束（isFinishing），此时播放服务仍在运行，
-        // 必须主动暂停，否则关闭小窗后还能听到后台声音
-        if (isFinishing) {
+        // 小窗被关闭时 Activity 会直接结束（isFinishing 不一定为 true），
+        // 此时播放服务仍在运行，必须主动暂停，否则关闭小窗后还能听到后台声音
+        if (isFinishing || pipExited) {
             viewModel.pauseAndSave()
             return
         }

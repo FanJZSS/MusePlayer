@@ -16,6 +16,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.muse.player.data.HistoryRepository
 import com.muse.player.data.SettingsRepository
 import com.muse.player.playback.network.MuseDataSource
 import com.muse.player.playback.network.SchemeRoutingDataSourceFactory
@@ -199,11 +200,27 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
+    /**
+     * 关闭画中画小窗、或从最近任务里划掉应用时，任务会被移除。
+     * MediaSessionService 默认在播放中继续运行，导致界面消失后仍在后台出声，
+     * 因此播放中也要主动暂停并记录进度。
+     */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val current = mediaSession?.player
-        if (current == null || !current.playWhenReady || current.mediaItemCount == 0) {
-            stopSelf()
+        if (current != null && (current.isPlaying || current.playWhenReady)) {
+            val item = current.currentMediaItem
+            val uri = item?.localConfiguration?.uri?.toString()
+            if (uri != null) {
+                HistoryRepository.record(
+                    uri,
+                    item.mediaMetadata.title?.toString().orEmpty(),
+                    current.currentPosition.coerceAtLeast(0L),
+                    current.duration.takeIf { it > 0 } ?: 0L
+                )
+            }
+            current.pause()
         }
+        stopSelf()
     }
 
     override fun onDestroy() {
