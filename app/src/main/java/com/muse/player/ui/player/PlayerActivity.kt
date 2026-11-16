@@ -34,10 +34,15 @@ class PlayerActivity : ComponentActivity() {
 
     // 是否刚退出画中画：回全屏时会在 onResume 清掉，只有界面被结束才保留
     private var pipExited = false
+    // 是否因为「疑似关闭小窗」而暂停过：回全屏时据此恢复播放，避免误暂停
+    private var pausedForPipExit = false
     private val handler = Handler(Looper.getMainLooper())
     // 退出小窗后延迟确认是否回到前台，没回来才按「关闭小窗」处理
     private val pipPauseCheck = Runnable {
+        // 又回到小窗了，不按关闭处理
+        if (isInPictureInPictureMode) return@Runnable
         if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            if (viewModel.player?.playWhenReady == true) pausedForPipExit = true
             viewModel.pauseAndSave()
         }
     }
@@ -286,7 +291,10 @@ class PlayerActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipExited = !isInPictureInPictureMode
-        if (!isInPictureInPictureMode) {
+        if (isInPictureInPictureMode) {
+            // 重新进入小窗：撤掉上一次退出小窗留下的检查，避免在小窗里被误暂停
+            handler.removeCallbacks(pipPauseCheck)
+        } else {
             // 「关闭小窗」和「恢复全屏」都会走到这里：恢复全屏会紧接着 onResume，
             // 关闭小窗则不会。稍后检查一次前台状态来区分，避免依赖 isFinishing。
             schedulePipPauseCheck()
@@ -295,7 +303,7 @@ class PlayerActivity : ComponentActivity() {
 
     private fun schedulePipPauseCheck() {
         handler.removeCallbacks(pipPauseCheck)
-        handler.postDelayed(pipPauseCheck, 600)
+        handler.postDelayed(pipPauseCheck, 800)
     }
 
     override fun onResume() {
@@ -303,6 +311,11 @@ class PlayerActivity : ComponentActivity() {
         // 从小窗恢复成全屏时继续播放
         pipExited = false
         handler.removeCallbacks(pipPauseCheck)
+        // 过渡期间若已被暂停（回调顺序在不同机型上不一致），这里恢复播放
+        if (pausedForPipExit) {
+            pausedForPipExit = false
+            viewModel.resume()
+        }
     }
 
     override fun onDestroy() {
@@ -339,6 +352,9 @@ class PlayerActivity : ComponentActivity() {
             // 小窗正常悬浮时 Activity 只是暂停、不会走 onStop；
             // 走到这里说明小窗已被关闭或隐藏，立即暂停避免残留在后台出声
             if (!SettingsRepository.state.value.backgroundPlay) {
+                // 部分机型在「恢复全屏」的过渡里也会短暂处于画中画状态，
+                // 标记一下，onResume 时如果确实回到全屏就恢复播放
+                pausedForPipExit = viewModel.player?.playWhenReady == true
                 viewModel.pauseAndSave()
             }
             return

@@ -588,6 +588,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         saveCurrentProgress()
     }
 
+    /** 恢复播放（从小窗回到全屏时使用） */
+    fun resume() {
+        player?.play()
+    }
+
     fun saveProgress() {
         saveCurrentProgress()
     }
