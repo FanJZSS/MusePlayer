@@ -3,6 +3,7 @@ package com.muse.player.ui.player
 import android.app.Application
 import android.content.ComponentName
 import android.net.Uri
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -18,6 +19,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.muse.player.data.HistoryRepository
@@ -66,6 +68,8 @@ data class PlayerUiState(
     val subtitlesAvailable: Boolean = false,
     val itemIndex: Int = 0,
     val itemCount: Int = 0,
+    // 播放器实例因解码兜底被重建时递增，界面据此重新绑定画面输出
+    val decoderRestart: Int = 0,
     val error: String? = null
 )
 
@@ -87,6 +91,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     // 已经按 HLS 重试过的地址，避免反复重试
     private val hlsRetriedUris = mutableSetOf<String>()
+    private val softwareRetriedUris = mutableSetOf<String>()
 
     private data class PendingStart(val entries: List<PlayEntry>, val index: Int, val positionMs: Long)
 
@@ -96,6 +101,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            if (retryAsSoftware(error)) return
             if (retryAsHls(error)) return
             _state.update {
                 it.copy(
@@ -285,6 +291,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** 解码失败（多见于设备不支持该编码）时，让服务改用软解重建播放器并重试一次 */
+    private fun retryAsSoftware(error: PlaybackException): Boolean {
+        val decodingFailed = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+            error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+        if (!decodingFailed) return false
+        val controller = player ?: return false
+        val uri = controller.currentMediaItem?.localConfiguration?.uri?.toString() ?: return false
+        if (!softwareRetriedUris.add(uri)) return false
+
+        val command = SessionCommand(PlaybackService.ACTION_SOFTWARE_FALLBACK, Bundle.EMPTY)
+        controller.sendCustomCommand(command, Bundle.EMPTY)
+        // 服务会重建播放器实例，画面输出需要重新绑定
+        _state.update {
+            it.copy(error = null, isBuffering = true, decoderRestart = it.decoderRestart + 1)
+        }
+        return true
+    }
+
     /** 无法识别容器且地址是网络地址时，按 HLS 重新构建一次并重试（每个地址只尝试一次） */
     private fun retryAsHls(error: PlaybackException): Boolean {
         if (error.errorCode != PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED) return false
@@ -324,6 +348,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> "无法识别视频格式（该地址可能不是直链视频）"
             PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> "播放列表格式异常"
             PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> "不支持该播放列表格式"
+            PlaybackException.ERROR_CODE_DECODING_FAILED -> "视频解码失败，设备可能不支持该编码格式"
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> "无法初始化视频解码器"
             else -> error.errorCodeName
         }
         val detail = if (error.errorCode in 2000..2999) {

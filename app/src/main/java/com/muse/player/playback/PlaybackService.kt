@@ -1,9 +1,12 @@
 package com.muse.player.playback
 
 import android.content.Intent
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -16,6 +19,10 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.muse.player.data.HistoryRepository
 import com.muse.player.data.SettingsRepository
 import com.muse.player.playback.network.MuseDataSource
@@ -40,6 +47,10 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
     private var appliedDecoderMode = SettingsRepository.state.value.decoderMode
+    // 硬解失败后临时改用软解（只影响本次服务生命周期，不写入用户设置）
+    private var softwareFallback = false
+    private var currentSoftwareFallbackUri: String? = null
+    private var rebuilding = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     // 网络视频磁盘缓存：看过的段落再次拖动时直接读本地，不再重新下载
@@ -63,7 +74,42 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         val exoPlayer = buildPlayer()
         player = exoPlayer
-        mediaSession = MediaSession.Builder(this, exoPlayer).build()
+        mediaSession = MediaSession.Builder(this, exoPlayer)
+            .setCallback(object : MediaSession.Callback {
+                // 放行软解兜底命令，否则来自界面的自定义命令会被会话拒绝
+                override fun onConnect(
+                    session: MediaSession,
+                    controller: MediaSession.ControllerInfo
+                ): MediaSession.ConnectionResult {
+                    val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
+                        .buildUpon()
+                        .add(SessionCommand(ACTION_SOFTWARE_FALLBACK, Bundle.EMPTY))
+                        .build()
+                    return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                        .setAvailableSessionCommands(commands)
+                        .build()
+                }
+
+                // 界面检测到解码失败时，通过该命令改用软解重建播放器
+                override fun onCustomCommand(
+                    session: MediaSession,
+                    controller: MediaSession.ControllerInfo,
+                    customCommand: SessionCommand,
+                    args: Bundle
+                ): ListenableFuture<SessionResult> {
+                    if (customCommand.customAction == ACTION_SOFTWARE_FALLBACK) {
+                        if (!softwareFallback) {
+                            softwareFallback = true
+                            rebuildPlayer()
+                        }
+                        return Futures.immediateFuture(
+                            SessionResult(SessionResult.RESULT_SUCCESS)
+                        )
+                    }
+                    return super.onCustomCommand(session, controller, customCommand, args)
+                }
+            })
+            .build()
 
         // 解码模式变化时重建播放器，保留当前播放队列与进度
         scope.launch {
@@ -155,11 +201,27 @@ class PlaybackService : MediaSessionService() {
             val settings = SettingsRepository.state.value
             repeatMode = settings.repeatMode
             shuffleModeEnabled = settings.shuffleEnabled
+            // 换到别的视频时撤销软解兜底，恢复用户设定的解码模式（同一个视频循环播不算换）
+            addListener(object : Player.Listener {
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    if (rebuilding) return
+                    val uri = mediaItem?.localConfiguration?.uri?.toString()
+                    if (uri != currentSoftwareFallbackUri) {
+                        currentSoftwareFallbackUri = uri
+                        softwareFallback = false
+                    }
+                }
+            })
         }
     }
 
     private fun buildRenderersFactory(): DefaultRenderersFactory {
-        val mode = SettingsRepository.state.value.decoderMode
+        // 硬解失败兜底：强制软解，忽略用户设置
+        val mode = if (softwareFallback) {
+            DECODER_SOFTWARE
+        } else {
+            SettingsRepository.state.value.decoderMode
+        }
         // 自动模式：优先硬件解码，失败时自动回退到软件解码
         val factory = DefaultRenderersFactory(this)
             .setEnableDecoderFallback(mode == DECODER_AUTO)
@@ -190,17 +252,22 @@ class PlaybackService : MediaSessionService() {
         val repeatMode = old.repeatMode
         val shuffleEnabled = old.shuffleModeEnabled
 
-        val fresh = buildPlayer()
-        player = fresh
-        session.player = fresh
+        rebuilding = true
+        try {
+            val fresh = buildPlayer()
+            player = fresh
+            session.player = fresh
 
-        if (items.isNotEmpty()) {
-            fresh.setMediaItems(items, index.coerceIn(0, items.lastIndex), position)
-            fresh.prepare()
+            if (items.isNotEmpty()) {
+                fresh.setMediaItems(items, index.coerceIn(0, items.lastIndex), position)
+                fresh.prepare()
+            }
+            fresh.repeatMode = repeatMode
+            fresh.shuffleModeEnabled = shuffleEnabled
+            fresh.playWhenReady = playWhenReady
+        } finally {
+            rebuilding = false
         }
-        fresh.repeatMode = repeatMode
-        fresh.shuffleModeEnabled = shuffleEnabled
-        fresh.playWhenReady = playWhenReady
         old.release()
     }
 
@@ -244,9 +311,11 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    private companion object {
-        const val DECODER_AUTO = 0
-        const val DECODER_SOFTWARE = 1
-        const val DECODER_HARDWARE = 2
+    companion object {
+        const val ACTION_SOFTWARE_FALLBACK = "com.muse.player.action.SOFTWARE_FALLBACK"
+
+        private const val DECODER_AUTO = 0
+        private const val DECODER_SOFTWARE = 1
+        private const val DECODER_HARDWARE = 2
     }
 }

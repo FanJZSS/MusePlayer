@@ -341,8 +341,9 @@ fun PlayerScreen(
                 }
             }
             if (state.connected) {
-                // 旋转画面时必须使用 TextureView：SurfaceView 无法应用旋转/缩放变换
-                key(rotated) {
+                // 旋转画面时必须使用 TextureView：SurfaceView 无法应用旋转/缩放变换；
+                // 解码兜底重建播放器后画面输出需要重新绑定，因此也纳入 key
+                key(rotated, state.decoderRestart) {
                     AndroidView(
                         factory = { ctx ->
                             val view = if (rotated) {
