@@ -387,12 +387,14 @@ fun LibraryScreen(
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
+            // 标签高亮与横杠跟随翻页进度，不再等状态回写，避免滞后
+            val selectedPage = pagerState.currentPage
             if (wide) {
                 NavigationRail(containerColor = MaterialTheme.colorScheme.background) {
                     Spacer(Modifier.height(8.dp))
                     tabs.forEachIndexed { index, tab ->
                         NavigationRailItem(
-                            selected = state.tab == index,
+                            selected = selectedPage == index,
                             onClick = {
                                 viewModel.setTab(index)
                                 scope.launch { pagerState.animateScrollToPage(index) }
@@ -440,12 +442,12 @@ fun LibraryScreen(
 
             if (!wide) {
                 TabRow(
-                    selectedTabIndex = state.tab,
+                    selectedTabIndex = selectedPage,
                     containerColor = MaterialTheme.colorScheme.background
                 ) {
                     tabs.forEachIndexed { index, tab ->
                         Tab(
-                            selected = state.tab == index,
+                            selected = selectedPage == index,
                             onClick = {
                                 viewModel.setTab(index)
                                 scope.launch { pagerState.animateScrollToPage(index) }
