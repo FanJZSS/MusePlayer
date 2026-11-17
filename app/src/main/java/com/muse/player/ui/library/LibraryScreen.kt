@@ -225,9 +225,9 @@ fun LibraryScreen(
 
     val scope = rememberCoroutineScope()
 
-    // 页码一变化就同步 tab，让导航高亮与内容切换同步
+    // 页码停稳后再同步 tab：滑动过程中写回状态会让整页重组，手势会掉帧
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { page ->
+        snapshotFlow { pagerState.settledPage }.collect { page ->
             if (page != viewModel.state.value.tab) viewModel.setTab(page)
         }
     }

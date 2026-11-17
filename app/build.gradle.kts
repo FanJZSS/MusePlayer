@@ -12,8 +12,8 @@ android {
         applicationId = "com.muse.player"
         minSdk = 24
         targetSdk = 34
-        versionCode = 78
-        versionName = "1.24.13"
+        versionCode = 79
+        versionName = "1.24.14"
         vectorDrawables { useSupportLibrary = true }
     }
 

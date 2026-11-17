@@ -17,8 +17,9 @@ import java.io.FileOutputStream
  */
 object ThumbnailLoader {
 
-    private val memory = object : LruCache<String, Bitmap>(32) {
-        override fun sizeOf(key: String, value: Bitmap): Int = 1
+    // 按占用内存计量（约 32MB），够放下几百张缩略图，反复切换分栏不必重新解码
+    private val memory = object : LruCache<String, Bitmap>(32 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
     }
 
     suspend fun load(context: Context, uri: Uri, id: Long): Bitmap? = withContext(Dispatchers.IO) {
