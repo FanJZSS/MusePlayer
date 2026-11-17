@@ -20,6 +20,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.muse.player.data.HistoryRepository
@@ -105,7 +106,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (retryAsHls(error)) return
             _state.update {
                 it.copy(
-                    error = friendlyError(error),
+                    error = errorMessage(error),
                     isBuffering = false
                 )
             }
@@ -301,12 +302,63 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (!softwareRetriedUris.add(uri)) return false
 
         val command = SessionCommand(PlaybackService.ACTION_SOFTWARE_FALLBACK, Bundle.EMPTY)
-        controller.sendCustomCommand(command, Bundle.EMPTY)
+        val result = controller.sendCustomCommand(command, Bundle.EMPTY)
+        // 命令被会话拒绝时要让用户知道，避免界面停在“缓冲中”
+        result.addListener(
+            {
+                val ok = runCatching {
+                    result.get().resultCode == SessionResult.RESULT_SUCCESS
+                }.getOrDefault(false)
+                if (!ok) {
+                    softwareRetriedUris.remove(uri)
+                    _state.update {
+                        it.copy(error = "切换软解失败，请重试", isBuffering = false)
+                    }
+                }
+            },
+            ContextCompat.getMainExecutor(getApplication())
+        )
         // 服务会重建播放器实例，画面输出需要重新绑定
         _state.update {
             it.copy(error = null, isBuffering = true, decoderRestart = it.decoderRestart + 1)
         }
         return true
+    }
+
+    /** 解码类错误附带编码信息，便于判断是设备不支持还是数据问题 */
+    private fun errorMessage(error: PlaybackException): String {
+        val base = friendlyError(error)
+        val decoding = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+            error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+        if (!decoding) return base
+        val uri = player?.currentMediaItem?.localConfiguration?.uri?.toString()
+        val softTried = uri != null && uri in softwareRetriedUris
+        val codecs = codecSummary()
+        return buildString {
+            append(base)
+            if (softTried) append("（已尝试软解）")
+            if (codecs.isNotEmpty()) append("　编码：").append(codecs)
+        }
+    }
+
+    /** 当前视频/音频轨的编码信息，例如 视频 video/hevc hvc1.2.4 */
+    private fun codecSummary(): String {
+        val p = player ?: return ""
+        val parts = mutableListOf<String>()
+        p.currentTracks.groups.forEach { group ->
+            val kind = when (group.type) {
+                C.TRACK_TYPE_VIDEO -> "视频"
+                C.TRACK_TYPE_AUDIO -> "音频"
+                else -> return@forEach
+            }
+            for (i in 0 until group.length) {
+                val format = group.getTrackFormat(i)
+                val mime = format.sampleMimeType ?: continue
+                val codec = format.codecs?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
+                parts += "$kind $mime$codec"
+            }
+        }
+        return parts.distinct().joinToString("，")
     }
 
     /** 无法识别容器且地址是网络地址时，按 HLS 重新构建一次并重试（每个地址只尝试一次） */
