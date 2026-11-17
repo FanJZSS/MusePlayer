@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -102,7 +103,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.navigation.NavController
 import com.muse.player.data.FolderItem
 import com.muse.player.data.HistoryEntry
@@ -202,12 +205,14 @@ fun LibraryScreen(
         PlayerLauncher.open(context, entries, index, resume)
     }
 
-    val tabs = listOf(
-        LibraryTab("媒体库", Icons.Rounded.VideoLibrary),
-        LibraryTab("历史", Icons.Rounded.History),
-        LibraryTab("浏览", Icons.Rounded.FolderOpen),
-        LibraryTab("网络", Icons.Rounded.Dns)
-    )
+    val tabs = remember {
+        listOf(
+            LibraryTab("媒体库", Icons.Rounded.VideoLibrary),
+            LibraryTab("历史", Icons.Rounded.History),
+            LibraryTab("浏览", Icons.Rounded.FolderOpen),
+            LibraryTab("网络", Icons.Rounded.Dns)
+        )
+    }
     // 媒体库视图模式：0 = 视频，1 = 文件夹（持久化，下次打开保持上次选择）
     var mediaMode by rememberSaveable {
         mutableIntStateOf(if (SettingsRepository.state.value.folderViewMode) 1 else 0)
@@ -387,32 +392,17 @@ fun LibraryScreen(
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
-            // 标签高亮与横杠跟随翻页进度，不再等状态回写，避免滞后
-            val selectedPage = pagerState.currentPage
+            // 导航与标签栏单独成组件：翻页进度变化只重组它们自己，不连带整页
             if (wide) {
-                NavigationRail(containerColor = MaterialTheme.colorScheme.background) {
-                    Spacer(Modifier.height(8.dp))
-                    tabs.forEachIndexed { index, tab ->
-                        NavigationRailItem(
-                            selected = selectedPage == index,
-                            onClick = {
-                                viewModel.setTab(index)
-                                scope.launch { pagerState.animateScrollToPage(index) }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = tab.title) },
-                            label = { Text(tab.title) }
-                        )
-                    }
-                    // 宽屏端在导航栏底部提供设置入口
-                    Spacer(Modifier.weight(1f))
-                    NavigationRailItem(
-                        selected = false,
-                        onClick = { navController.navigate("settings") },
-                        icon = { Icon(Icons.Rounded.Settings, contentDescription = "设置") },
-                        label = { Text("设置") }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
+                LibraryNavRail(
+                    pagerState = pagerState,
+                    tabs = tabs,
+                    onSelect = { index ->
+                        viewModel.setTab(index)
+                        scope.launch { pagerState.animateScrollToPage(index) }
+                    },
+                    onSettings = { navController.navigate("settings") }
+                )
             }
 
             Column(
@@ -441,21 +431,14 @@ fun LibraryScreen(
             }
 
             if (!wide) {
-                TabRow(
-                    selectedTabIndex = selectedPage,
-                    containerColor = MaterialTheme.colorScheme.background
-                ) {
-                    tabs.forEachIndexed { index, tab ->
-                        Tab(
-                            selected = selectedPage == index,
-                            onClick = {
-                                viewModel.setTab(index)
-                                scope.launch { pagerState.animateScrollToPage(index) }
-                            },
-                            text = { Text(tab.title) }
-                        )
+                LibraryTabBar(
+                    pagerState = pagerState,
+                    tabs = tabs,
+                    onSelect = { index ->
+                        viewModel.setTab(index)
+                        scope.launch { pagerState.animateScrollToPage(index) }
                     }
-                }
+                )
             }
 
             val progressMap = remember(state.history) {
@@ -566,8 +549,16 @@ fun LibraryScreen(
                     if (state.history.isEmpty()) {
                         EmptyState("暂无播放记录", "播放过的视频会出现在这里")
                     } else {
-                        val videoByUri = remember(state.videos) {
-                            state.videos.associateBy { it.uri.toString() }
+                        // 媒体库可能有几千条，建 uri 索引放到后台线程，
+                        // 避免滑动进入历史分栏的那一帧在主线程上做大量映射
+                        var videoByUri by remember {
+                            mutableStateOf<Map<String, VideoItem>>(emptyMap())
+                        }
+                        LaunchedEffect(state.videos) {
+                            val videos = state.videos
+                            videoByUri = withContext(Dispatchers.Default) {
+                                videos.associateBy { it.uri.toString() }
+                            }
                         }
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
@@ -915,6 +906,64 @@ private fun InfoLine(label: String, value: String) {
 }
 
 private data class LibraryTab(val title: String, val icon: ImageVector)
+
+/**
+ * 宽屏导航栏。翻页进度只在这个组件内部读取，
+ * 滑动时不会因为 currentPage 变化而重组媒体库/历史等页面内容。
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryNavRail(
+    pagerState: PagerState,
+    tabs: List<LibraryTab>,
+    onSelect: (Int) -> Unit,
+    onSettings: () -> Unit
+) {
+    val selected = pagerState.currentPage
+    NavigationRail(containerColor = MaterialTheme.colorScheme.background) {
+        Spacer(Modifier.height(8.dp))
+        tabs.forEachIndexed { index, tab ->
+            NavigationRailItem(
+                selected = selected == index,
+                onClick = { onSelect(index) },
+                icon = { Icon(tab.icon, contentDescription = tab.title) },
+                label = { Text(tab.title) }
+            )
+        }
+        // 宽屏端在导航栏底部提供设置入口
+        Spacer(Modifier.weight(1f))
+        NavigationRailItem(
+            selected = false,
+            onClick = onSettings,
+            icon = { Icon(Icons.Rounded.Settings, contentDescription = "设置") },
+            label = { Text("设置") }
+        )
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** 窄屏标签栏：横杠跟随 pager 当前页即时切换，重组范围限制在本组件内 */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryTabBar(
+    pagerState: PagerState,
+    tabs: List<LibraryTab>,
+    onSelect: (Int) -> Unit
+) {
+    val selected = pagerState.currentPage
+    TabRow(
+        selectedTabIndex = selected,
+        containerColor = MaterialTheme.colorScheme.background
+    ) {
+        tabs.forEachIndexed { index, tab ->
+            Tab(
+                selected = selected == index,
+                onClick = { onSelect(index) },
+                text = { Text(tab.title) }
+            )
+        }
+    }
+}
 
 private fun openAppSettings(context: Context) {
     val intent = Intent(
