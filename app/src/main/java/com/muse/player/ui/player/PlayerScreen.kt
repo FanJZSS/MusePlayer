@@ -159,6 +159,8 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var locked by remember { mutableStateOf(false) }
     var zoom by remember { mutableFloatStateOf(1f) }
+    // 切换视频后画面缩放回到默认倍数
+    LaunchedEffect(state.itemIndex) { zoom = 1f }
     var gestureHint by remember { mutableStateOf<GestureHint?>(null) }
     var sliderValue by remember { mutableStateOf<Float?>(null) }
     var showSpeedSheet by remember { mutableStateOf(false) }
