@@ -15,7 +15,7 @@ data class AppSettings(
     val hiddenFolders: Set<String> = emptySet(), // 被隐藏的文件夹 bucketId
     val showSystemHiddenFolders: Boolean = false, // 是否扫描并显示以 . 开头的系统隐藏文件夹
     val folderViewMode: Boolean = false, // 媒体库默认展示文件夹视图
-    val gridViewMode: Boolean = true, // 视频以网格展示（false 为列表）
+    val gridViewMode: Boolean = false, // 视频以列表展示（true 为网格）
     val sortField: String = "DATE", // 媒体库排序字段（SortField 名称）
     val sortAscending: Boolean = false, // 媒体库排序是否升序
     val seekGestureSeconds: Int = 300, // 全屏宽度左右滑动可调节的时长（秒）
@@ -48,7 +48,7 @@ object SettingsRepository {
             hiddenFolders = sp.getStringSet("hidden_folders", emptySet())?.toSet() ?: emptySet(),
             showSystemHiddenFolders = sp.getBoolean("show_system_hidden_folders", false),
             folderViewMode = sp.getBoolean("folder_view_mode", false),
-            gridViewMode = sp.getBoolean("grid_view_mode", true),
+            gridViewMode = sp.getBoolean("grid_view_mode", false),
             sortField = sp.getString("sort_field", "DATE") ?: "DATE",
             sortAscending = sp.getBoolean("sort_ascending", false),
             seekGestureSeconds = sp.getInt("seek_gesture_seconds", 300),
