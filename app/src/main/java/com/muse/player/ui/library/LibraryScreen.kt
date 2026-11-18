@@ -19,7 +19,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,6 +37,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -71,12 +74,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -84,6 +86,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -98,6 +101,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -947,31 +951,74 @@ private fun LibraryNavRail(
     }
 }
 
-/** 窄屏底部导航栏：高亮跟随 pager 当前页即时切换，重组范围限制在本组件内 */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+/**
+ * 窄屏底部导航栏。
+ * 不用 Material3 NavigationBar：它带指示器动画和涟漪，低端机左右滑动切换时容易掉帧；
+ * 这里自绘固定 56dp 的轻量栏，选中态只在翻转时重组。
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryBottomBar(
     pagerState: PagerState,
     tabs: List<LibraryTab>,
     onSelect: (Int) -> Unit
 ) {
-    val selected = pagerState.currentPage
-    // Material3 默认 80dp，手机竖屏显得偏高；收到 56dp，底部手势条留白交给 insets
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        modifier = Modifier
-            .navigationBarsPadding()
-            .height(56.dp),
-        windowInsets = WindowInsets(0, 0, 0, 0)
-    ) {
-        tabs.forEachIndexed { index, tab ->
-            NavigationBarItem(
-                selected = selected == index,
-                onClick = { onSelect(index) },
-                icon = { Icon(tab.icon, contentDescription = tab.title) },
-                label = { Text(tab.title, fontSize = 10.sp) }
-            )
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(56.dp)
+                .selectableGroup()
+        ) {
+            val currentPage = { pagerState.currentPage }
+            tabs.forEachIndexed { index, tab ->
+                BottomNavItem(
+                    tab = tab,
+                    currentPage = currentPage,
+                    index = index,
+                    onClick = { onSelect(index) }
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun RowScope.BottomNavItem(
+    tab: LibraryTab,
+    currentPage: () -> Int,
+    index: Int,
+    onClick: () -> Unit
+) {
+    val active by remember { derivedStateOf { currentPage() == index } }
+    val color = if (active) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .selectable(selected = active, role = Role.Tab, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = tab.icon,
+            contentDescription = tab.title,
+            tint = color,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = tab.title,
+            color = color,
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
