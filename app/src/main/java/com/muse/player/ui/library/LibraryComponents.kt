@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muse.player.data.FolderItem
 import com.muse.player.data.HistoryEntry
+import com.muse.player.data.SettingsRepository
 import com.muse.player.data.VideoItem
 import com.muse.player.data.network.NetworkRepository
 import com.muse.player.data.network.ServerType
@@ -61,8 +63,10 @@ import com.muse.player.util.formatSize
 @Composable
 fun VideoThumbnail(video: VideoItem, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val bitmap by produceState<Bitmap?>(initialValue = null, video.id) {
-        value = ThumbnailLoader.load(context, video.uri, video.id)
+    // 低性能模式：完全不读取/解码缩略图，滚动时省掉解码线程与位图内存
+    val lowPerformance = SettingsRepository.state.collectAsState().value.lowPerformanceMode
+    val bitmap by produceState<Bitmap?>(initialValue = null, video.id, lowPerformance) {
+        value = if (lowPerformance) null else ThumbnailLoader.load(context, video.uri, video.id)
     }
     Box(
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),

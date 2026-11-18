@@ -132,6 +132,12 @@ fun SettingsScreen(navController: NavController) {
                     onClick = { openAllFilesAccess(context) }
                 )
             }
+            SwitchRow(
+                title = "低性能模式",
+                subtitle = "不加载视频缩略图，只显示纯色占位，老机型滚动更流畅",
+                checked = settings.lowPerformanceMode,
+                onCheckedChange = SettingsRepository::setLowPerformanceMode
+            )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("播放")

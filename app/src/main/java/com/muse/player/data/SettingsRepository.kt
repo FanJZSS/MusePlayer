@@ -26,7 +26,8 @@ data class AppSettings(
     val customAspectHeight: Int = 9, // 自定义画面比例的高
     val decoderMode: Int = 0, // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
     val repeatMode: Int = 0, // 0 顺序播放, 1 单曲循环, 2 列表循环
-    val shuffleEnabled: Boolean = false // 随机播放
+    val shuffleEnabled: Boolean = false, // 随机播放
+    val lowPerformanceMode: Boolean = false // 低性能模式：不加载视频缩略图
 )
 
 object SettingsRepository {
@@ -58,7 +59,8 @@ object SettingsRepository {
             customAspectHeight = sp.getInt("custom_aspect_height", 9),
             decoderMode = sp.getInt("decoder_mode", 0),
             repeatMode = sp.getInt("repeat_mode", 0),
-            shuffleEnabled = sp.getBoolean("shuffle_enabled", false)
+            shuffleEnabled = sp.getBoolean("shuffle_enabled", false),
+            lowPerformanceMode = sp.getBoolean("low_performance_mode", false)
         )
     }
 
@@ -169,5 +171,10 @@ object SettingsRepository {
     fun setShuffleEnabled(value: Boolean) {
         sp.edit().putBoolean("shuffle_enabled", value).apply()
         _state.value = _state.value.copy(shuffleEnabled = value)
+    }
+
+    fun setLowPerformanceMode(value: Boolean) {
+        sp.edit().putBoolean("low_performance_mode", value).apply()
+        _state.value = _state.value.copy(lowPerformanceMode = value)
     }
 }
