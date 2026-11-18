@@ -15,8 +15,16 @@ android {
         versionCode = 86
         versionName = "2.0.0"
         vectorDrawables { useSupportLibrary = true }
-        // libVLC 自带各 ABI 的原生库，限定常用架构以控制包体积
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+    }
+
+    // 按 CPU 架构拆包：libVLC 原生库很大，各架构单独发布，不再出全量包
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
+        }
     }
 
     signingConfigs {

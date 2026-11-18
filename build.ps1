@@ -48,19 +48,24 @@ try {
             }
         }
 
-        $apk = Join-Path $root "app\build\outputs\apk\release\app-release.apk"
-        if (-not (Test-Path $apk)) {
-            Write-Host "Release APK not found: $apk" -ForegroundColor Red
+        $apkDir = Join-Path $root "app\build\outputs\apk\release"
+        $apks = @(Get-ChildItem -Path $apkDir -Filter "*.apk" -ErrorAction SilentlyContinue)
+        if ($apks.Count -eq 0) {
+            Write-Host "Release APK not found in: $apkDir" -ForegroundColor Red
             $exitCode = 1
         } else {
-            $target = Join-Path $root ("MusePlayer_v{0}.apk" -f $version)
-            Copy-Item $apk $target -Force
-            $sizeMb = [math]::Round((Get-Item $target).Length / 1MB, 1)
-
             Write-Host ""
             Write-Host "Build succeeded." -ForegroundColor Green
             Write-Host ("Version : {0}" -f $version)
-            Write-Host ("APK     : {0} ({1} MB)" -f $target, $sizeMb)
+            foreach ($apk in $apks) {
+                # app-arm64-v8a-release.apk -> arm64-v8a
+                $abi = $apk.BaseName -replace '^app-', '' -replace '-release$', ''
+                $fileName = if ($abi) { "MusePlayer_v{0}_{1}.apk" -f $version, $abi } else { "MusePlayer_v{0}.apk" -f $version }
+                $target = Join-Path $root $fileName
+                Copy-Item $apk.FullName $target -Force
+                $sizeMb = [math]::Round((Get-Item $target).Length / 1MB, 1)
+                Write-Host ("APK     : {0} ({1} MB)" -f $target, $sizeMb)
+            }
         }
     }
 } finally {
