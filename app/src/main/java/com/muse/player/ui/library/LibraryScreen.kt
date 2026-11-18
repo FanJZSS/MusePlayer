@@ -69,12 +69,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -385,7 +385,20 @@ fun LibraryScreen(
                     }
                 }
             )
-        }
+        },
+        bottomBar = {
+            // 窄屏把分栏放到屏幕底部，拇指更容易触达
+            if (!wide) {
+                LibraryBottomBar(
+                    pagerState = pagerState,
+                    tabs = tabs,
+                    onSelect = { index ->
+                        viewModel.setTab(index)
+                        scope.launch { pagerState.animateScrollToPage(index) }
+                    }
+                )
+            }
+        },
     ) { innerPadding ->
         Row(
             modifier = Modifier
@@ -426,17 +439,6 @@ fun LibraryScreen(
                                 Icon(Icons.Rounded.Close, contentDescription = "清空")
                             }
                         }
-                    }
-                )
-            }
-
-            if (!wide) {
-                LibraryTabBar(
-                    pagerState = pagerState,
-                    tabs = tabs,
-                    onSelect = { index ->
-                        viewModel.setTab(index)
-                        scope.launch { pagerState.animateScrollToPage(index) }
                     }
                 )
             }
@@ -942,24 +944,22 @@ private fun LibraryNavRail(
     }
 }
 
-/** 窄屏标签栏：横杠跟随 pager 当前页即时切换，重组范围限制在本组件内 */
+/** 窄屏底部导航栏：高亮跟随 pager 当前页即时切换，重组范围限制在本组件内 */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun LibraryTabBar(
+private fun LibraryBottomBar(
     pagerState: PagerState,
     tabs: List<LibraryTab>,
     onSelect: (Int) -> Unit
 ) {
     val selected = pagerState.currentPage
-    TabRow(
-        selectedTabIndex = selected,
-        containerColor = MaterialTheme.colorScheme.background
-    ) {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
         tabs.forEachIndexed { index, tab ->
-            Tab(
+            NavigationBarItem(
                 selected = selected == index,
                 onClick = { onSelect(index) },
-                text = { Text(tab.title) }
+                icon = { Icon(tab.icon, contentDescription = tab.title) },
+                label = { Text(tab.title) }
             )
         }
     }
