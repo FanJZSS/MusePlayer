@@ -19,6 +19,12 @@ import kotlinx.coroutines.flow.update
  */
 class VlcEngine(context: Context) {
 
+    companion object {
+        /** 完整版带 libVLC 原生库，可做解码兜底 */
+        const val SUPPORTED = true
+    }
+
+
     data class VlcState(
         val playing: Boolean = false,
         val buffering: Boolean = false,

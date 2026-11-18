@@ -48,19 +48,27 @@ try {
             }
         }
 
-        $apkDir = Join-Path $root "app\build\outputs\apk\release"
-        $apks = @(Get-ChildItem -Path $apkDir -Filter "*.apk" -ErrorAction SilentlyContinue)
+        $apkRoot = Join-Path $root "app\build\outputs\apk"
+        $apks = @(Get-ChildItem -Path $apkRoot -Recurse -Filter "*.apk" -ErrorAction SilentlyContinue |
+            Where-Object { $_.DirectoryName -match '\\release$' })
         if ($apks.Count -eq 0) {
-            Write-Host "Release APK not found in: $apkDir" -ForegroundColor Red
+            Write-Host "Release APK not found in: $apkRoot" -ForegroundColor Red
             $exitCode = 1
         } else {
             Write-Host ""
             Write-Host "Build succeeded." -ForegroundColor Green
             Write-Host ("Version : {0}" -f $version)
             foreach ($apk in $apks) {
-                # app-arm64-v8a-release.apk -> arm64-v8a
-                $abi = $apk.BaseName -replace '^app-', '' -replace '-release$', ''
-                $fileName = if ($abi) { "MusePlayer_v{0}_{1}.apk" -f $version, $abi } else { "MusePlayer_v{0}.apk" -f $version }
+                # app-full-arm64-v8a-release.apk / app-lite-arm64-v8a-release.apk
+                $name = $apk.BaseName -replace '-release$', ''
+                $isLite = $name -like 'app-lite-*'
+                $abi = $name -replace '^app-(full|lite)-', ''
+                $prefix = if ($isLite) { "MusePlayer_Lite" } else { "MusePlayer" }
+                $fileName = if ($abi) {
+                    "{0}_v{1}_{2}.apk" -f $prefix, $version, $abi
+                } else {
+                    "{0}_v{1}.apk" -f $prefix, $version
+                }
                 $target = Join-Path $root $fileName
                 Copy-Item $apk.FullName $target -Force
                 $sizeMb = [math]::Round((Get-Item $target).Length / 1MB, 1)

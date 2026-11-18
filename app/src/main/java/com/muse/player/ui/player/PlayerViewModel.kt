@@ -365,6 +365,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Media3 解不了（编码不支持、容器不支持）时切到 libVLC（内置 FFmpeg） */
     private fun switchToVlcOnDecodeError(error: PlaybackException): Boolean {
+        // 轻量版不带 libVLC，不做兜底
+        if (!VlcEngine.SUPPORTED) return false
         val unsupported = when (error.errorCode) {
             PlaybackException.ERROR_CODE_DECODING_FAILED,
             PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,

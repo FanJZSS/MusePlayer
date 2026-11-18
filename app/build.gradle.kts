@@ -12,9 +12,23 @@ android {
         applicationId = "com.muse.player"
         minSdk = 24
         targetSdk = 34
-        versionCode = 95
-        versionName = "2.3.0"
+        versionCode = 96
+        versionName = "2.4.0"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    // 完整版带 libVLC（可软解 10bit H.265 等），轻量版不含原生库、体积小
+    flavorDimensions += "engine"
+    productFlavors {
+        create("full") {
+            dimension = "engine"
+        }
+        create("lite") {
+            dimension = "engine"
+            // 与完整版并存安装，互不覆盖
+            applicationIdSuffix = ".lite"
+            versionNameSuffix = "-lite"
+        }
     }
 
     // 按 CPU 架构拆包：libVLC 原生库很大，各架构单独发布，不再出全量包
@@ -108,8 +122,9 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // 第二播放引擎：Media3 解不出的格式（如 10bit H.265）交给 libVLC 软解
-    implementation("org.videolan.android:libvlc-all:3.6.0")
+    // 第二播放引擎：Media3 解不出的格式（如 10bit H.265）交给 libVLC 软解。
+    // 只打进完整版，轻量版用 src/lite 下的空实现替代。
+    "fullImplementation"("org.videolan.android:libvlc-all:3.6.0")
 
     // 局域网协议：SMB / FTP / WebDAV
     implementation("eu.agno3.jcifs:jcifs-ng:2.1.10")

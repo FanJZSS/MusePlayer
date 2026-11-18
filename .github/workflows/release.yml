@@ -35,11 +35,17 @@ jobs:
         run: |
           VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
           mkdir -p out
-          for f in app/build/outputs/apk/release/*.apk; do
+          for f in app/build/outputs/apk/*/release/*.apk; do
             name=$(basename "$f" .apk)
-            abi=${name#app-}
+            prefix="MusePlayer"
+            abi=${name#app-lite-}
+            if [ "$abi" = "$name" ]; then
+              abi=${name#app-full-}
+            else
+              prefix="MusePlayer_Lite"
+            fi
             abi=${abi%-release}
-            cp "$f" "out/MusePlayer_v${VERSION}_${abi}.apk"
+            cp "$f" "out/${prefix}_v${VERSION}_${abi}.apk"
           done
           ls -lh out
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
