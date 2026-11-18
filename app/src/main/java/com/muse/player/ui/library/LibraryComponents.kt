@@ -74,10 +74,20 @@ fun VideoThumbnail(video: VideoItem, modifier: Modifier = Modifier) {
     ) {
         val bmp = bitmap
         if (bmp != null) {
+            val image = bmp.asImageBitmap()
+            // 背景：铺满裁切并压暗，竖屏视频两侧不会显得空旷
             Image(
-                bitmap = bmp.asImageBitmap(),
+                bitmap = image,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(Modifier.fillMaxSize().background(Color(0x99000000)))
+            // 前景：完整显示画面，横屏几乎铺满，竖屏自动留出两侧
+            Image(
+                bitmap = image,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()
             )
         } else {

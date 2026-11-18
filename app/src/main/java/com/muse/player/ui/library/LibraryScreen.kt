@@ -75,8 +75,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -918,10 +916,11 @@ private fun InfoLine(label: String, value: String) {
 private data class LibraryTab(val title: String, val icon: ImageVector)
 
 /**
- * 宽屏导航栏。翻页进度只在这个组件内部读取，
+ * 宽屏左侧导航栏。翻页进度只在这个组件内部读取，
  * 滑动时不会因为 currentPage 变化而重组媒体库/历史等页面内容。
+ * 视觉与底部栏一致：无指示器背景、无水波纹，选中只靠图标/文字变色。
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryNavRail(
     pagerState: PagerState,
@@ -929,27 +928,61 @@ private fun LibraryNavRail(
     onSelect: (Int) -> Unit,
     onSettings: () -> Unit
 ) {
-    val selected = pagerState.currentPage
-    NavigationRail(containerColor = MaterialTheme.colorScheme.background) {
-        Spacer(Modifier.height(8.dp))
-        tabs.forEachIndexed { index, tab ->
-            NavigationRailItem(
-                selected = selected == index,
-                onClick = { onSelect(index) },
-                icon = { Icon(tab.icon, contentDescription = tab.title) },
-                label = { Text(tab.title) }
+    val currentPage = { pagerState.currentPage }
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(80.dp)
+                .selectableGroup(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.height(12.dp))
+            tabs.forEachIndexed { index, tab ->
+                RailNavItem(
+                    icon = tab.icon,
+                    label = tab.title,
+                    activeProvider = { currentPage() == index },
+                    onClick = { onSelect(index) }
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            // 宽屏端在导航栏底部提供设置入口
+            RailNavItem(
+                icon = Icons.Rounded.Settings,
+                label = "设置",
+                activeProvider = { false },
+                onClick = onSettings
             )
+            Spacer(Modifier.height(12.dp))
         }
-        // 宽屏端在导航栏底部提供设置入口
-        Spacer(Modifier.weight(1f))
-        NavigationRailItem(
-            selected = false,
-            onClick = onSettings,
-            icon = { Icon(Icons.Rounded.Settings, contentDescription = "设置") },
-            label = { Text("设置") }
-        )
-        Spacer(Modifier.height(8.dp))
     }
+}
+
+@Composable
+private fun RailNavItem(
+    icon: ImageVector,
+    label: String,
+    activeProvider: () -> Boolean,
+    onClick: () -> Unit
+) {
+    val active by remember { derivedStateOf { activeProvider() } }
+    val interactionSource = remember { MutableInteractionSource() }
+    NavItemVisual(
+        icon = icon,
+        label = label,
+        active = active,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .selectable(
+                selected = active,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick
+            )
+    )
 }
 
 /**
@@ -1022,6 +1055,40 @@ private fun RowScope.BottomNavItem(
         )
         Text(
             text = tab.title,
+            color = color,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** 导航项统一视觉：图标 + 文字，选中仅变色 */
+@Composable
+private fun NavItemVisual(
+    icon: ImageVector,
+    label: String,
+    active: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val color = if (active) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = color,
+            modifier = Modifier.size(24.dp)
+        )
+        Text(
+            text = label,
             color = color,
             fontSize = 12.sp,
             maxLines = 1,
