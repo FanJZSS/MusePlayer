@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -100,6 +102,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -953,13 +956,20 @@ private fun LibraryBottomBar(
     onSelect: (Int) -> Unit
 ) {
     val selected = pagerState.currentPage
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+    // Material3 默认 80dp，手机竖屏显得偏高；收到 56dp，底部手势条留白交给 insets
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .navigationBarsPadding()
+            .height(56.dp),
+        windowInsets = WindowInsets(0, 0, 0, 0)
+    ) {
         tabs.forEachIndexed { index, tab ->
             NavigationBarItem(
                 selected = selected == index,
                 onClick = { onSelect(index) },
                 icon = { Icon(tab.icon, contentDescription = tab.title) },
-                label = { Text(tab.title) }
+                label = { Text(tab.title, fontSize = 10.sp) }
             )
         }
     }
