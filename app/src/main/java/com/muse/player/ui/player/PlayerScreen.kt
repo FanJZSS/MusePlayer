@@ -517,7 +517,9 @@ fun PlayerScreen(
                         fun seekTarget(): Long {
                             val duration = viewModel.state.value.durationMs
                                 .takeIf { it > 0 } ?: Long.MAX_VALUE
-                            return (startPosition + (accDx / width * seekRangeMs).toLong())
+                            // 灵敏度：滑过约 2/3 屏宽即可覆盖设置里的调节时长
+                            val seekWidth = width * 0.65f
+                            return (startPosition + (accDx / seekWidth * seekRangeMs).toLong())
                                 .coerceIn(0L, duration)
                         }
 
