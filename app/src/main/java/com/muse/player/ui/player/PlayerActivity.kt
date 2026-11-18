@@ -42,7 +42,7 @@ class PlayerActivity : ComponentActivity() {
         // 又回到小窗了，不按关闭处理
         if (isInPictureInPictureMode) return@Runnable
         if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            if (viewModel.player?.playWhenReady == true) pausedForPipExit = true
+            if (viewModel.isActive()) pausedForPipExit = true
             viewModel.pauseAndSave()
         }
     }
@@ -354,7 +354,7 @@ class PlayerActivity : ComponentActivity() {
             if (!SettingsRepository.state.value.backgroundPlay) {
                 // 部分机型在「恢复全屏」的过渡里也会短暂处于画中画状态，
                 // 标记一下，onResume 时如果确实回到全屏就恢复播放
-                pausedForPipExit = viewModel.player?.playWhenReady == true
+                pausedForPipExit = viewModel.isActive()
                 viewModel.pauseAndSave()
             }
             return

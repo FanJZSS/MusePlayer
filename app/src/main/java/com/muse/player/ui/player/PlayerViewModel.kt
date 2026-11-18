@@ -27,7 +27,10 @@ import com.muse.player.data.HistoryRepository
 import com.muse.player.data.PlayEntry
 import com.muse.player.data.SettingsRepository
 import com.muse.player.data.SubtitleFinder
+import com.muse.player.data.network.NetworkRepository
+import com.muse.player.data.network.ServerType
 import com.muse.player.playback.PlaybackService
+import com.muse.player.playback.vlc.VlcEngine
 import com.muse.player.playback.network.MuseDataSource
 import com.muse.player.util.NetworkTitles
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +74,8 @@ data class PlayerUiState(
     val itemCount: Int = 0,
     // 播放器实例因解码兜底被重建时递增，界面据此重新绑定画面输出
     val decoderRestart: Int = 0,
+    // 0 = Media3（系统解码器），1 = libVLC（内置 FFmpeg 软解）
+    val engine: Int = 0,
     val error: String? = null
 )
 
@@ -94,6 +99,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val hlsRetriedUris = mutableSetOf<String>()
     private val softwareRetriedUris = mutableSetOf<String>()
 
+    // 兼容引擎：Media3 解不出的格式交给 libVLC 软解。
+    // 原生库体积很大，只有真的需要兜底时才初始化。
+    private val vlcHolder = lazy {
+        VlcEngine(getApplication<Application>()).also { engine -> observeVlc(engine) }
+    }
+    private val vlc: VlcEngine by vlcHolder
+    private var usingVlc = false
+
     private data class PendingStart(val entries: List<PlayEntry>, val index: Int, val positionMs: Long)
 
     private val listener = object : Player.Listener {
@@ -104,6 +117,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         override fun onPlayerError(error: PlaybackException) {
             if (retryAsSoftware(error)) return
             if (retryAsHls(error)) return
+            if (switchToVlcOnDecodeError(error)) return
             _state.update {
                 it.copy(
                     error = errorMessage(error),
@@ -121,6 +135,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         connect()
+    }
+
+    /** 兼容引擎自己维护播放进度，镜像到界面状态 */
+    private fun observeVlc(engine: VlcEngine) {
+        viewModelScope.launch {
+            engine.state.collect { s ->
+                if (!usingVlc) return@collect
+                _state.update {
+                    it.copy(
+                        isPlaying = s.playing,
+                        isBuffering = s.buffering,
+                        positionMs = s.positionMs,
+                        durationMs = s.durationMs.takeIf { d -> d > 0 } ?: it.durationMs,
+                        error = s.error ?: it.error
+                    )
+                }
+                if (s.ended) {
+                    val next = _state.value.itemIndex + 1
+                    if (next in entries.indices) playVlcIndex(next) else vlc.pause()
+                }
+            }
+        }
     }
 
     private fun connect() {
@@ -325,6 +361,134 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         return true
     }
 
+    /** Media3 解不了（编码不支持、容器不支持）时切到 libVLC（内置 FFmpeg） */
+    private fun switchToVlcOnDecodeError(error: PlaybackException): Boolean {
+        val unsupported = when (error.errorCode) {
+            PlaybackException.ERROR_CODE_DECODING_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED -> true
+
+            else -> false
+        }
+        if (!unsupported || usingVlc) return false
+        return switchToVlc()
+    }
+
+    /** 画面容器交给界面创建后挂载 */
+    fun attachVlcView(view: org.videolan.libvlc.util.VLCVideoLayout) {
+        vlc.attachView(view)
+    }
+
+    private fun switchToVlc(): Boolean {
+        val controller = player ?: return false
+        val index = controller.currentMediaItemIndex
+        val entry = entries.getOrNull(index) ?: return false
+        val url = vlcUrl(entry) ?: return false
+        val position = controller.currentPosition.coerceAtLeast(0L)
+        val speed = controller.playbackParameters.speed
+
+        controller.pause()
+        usingVlc = true
+        vlc.play(url, position, speed)
+        applyVlcAspect(_state.value.aspectMode)
+        _state.update {
+            it.copy(
+                engine = 1,
+                error = null,
+                isPlaying = false,
+                isBuffering = true,
+                audioTracks = emptyList(),
+                subtitleTracks = emptyList(),
+                subtitlesAvailable = false,
+                itemIndex = index,
+                itemCount = entries.size,
+                hasPrev = index > 0,
+                hasNext = index < entries.lastIndex,
+                title = entry.title
+            )
+        }
+        return true
+    }
+
+    /** 兼容引擎模式下按队列索引播放 */
+    private fun playVlcIndex(index: Int) {
+        val entry = entries.getOrNull(index) ?: return
+        val url = vlcUrl(entry) ?: return
+        vlc.play(url, 0L, _state.value.speed)
+        applyVlcAspect(_state.value.aspectMode)
+        _state.update {
+            it.copy(
+                itemIndex = index,
+                title = entry.title,
+                isPlaying = false,
+                isBuffering = true,
+                hasPrev = index > 0,
+                hasNext = index < entries.lastIndex,
+                error = null
+            )
+        }
+    }
+
+    /** 内部协议地址转成 libVLC 可直接打开的地址（SMB/FTP 需要把凭据放进 URL） */
+    private fun vlcUrl(entry: PlayEntry): String? {
+        val raw = entry.uri
+        // MediaStore 的 content:// 交给 libVLC 不稳定，本地文件优先用真实路径
+        if (raw.startsWith("content://")) {
+            val path = entry.path
+            if (path != null && File(path).exists()) {
+                return Uri.fromFile(File(path)).toString()
+            }
+            return raw
+        }
+        val resolved = NetworkRepository.resolve(Uri.parse(raw)) ?: return raw
+        val (server, path) = resolved
+        val auth = if (server.username.isBlank()) {
+            ""
+        } else {
+            Uri.encode(server.username) + ":" + Uri.encode(server.password) + "@"
+        }
+        return when (server.type) {
+            ServerType.SMB -> buildString {
+                append("smb://").append(auth).append(server.host)
+                if (server.port != ServerType.SMB.defaultPort) append(':').append(server.port)
+                NetworkRepository.segments(path).forEach { append('/').append(it) }
+            }
+
+            ServerType.FTP -> buildString {
+                append("ftp://").append(auth).append(server.host).append(':').append(server.port)
+                NetworkRepository.segments(path).forEach { append('/').append(it) }
+            }
+
+            ServerType.WEBDAV -> {
+                // libVLC 通过 HTTP 访问 WebDAV，凭据需要写进地址
+                val base = NetworkRepository.webDavUrl(server, path, directory = false)
+                if (auth.isBlank()) base else base.replaceFirst("://", "://$auth")
+            }
+        }
+    }
+
+    /** 固定画面比例交给 VLC 处理；其余按原始比例显示 */
+    private fun applyVlcAspect(mode: Int) {
+        if (!usingVlc) return
+        val ratio = when (mode) {
+            3 -> "16:9"
+            4 -> "4:3"
+            5 -> "21:9"
+            6 -> "9:16"
+            7 -> {
+                val w = SettingsRepository.state.value.customAspectWidth
+                val h = SettingsRepository.state.value.customAspectHeight
+                if (w > 0 && h > 0) "$w:$h" else null
+            }
+
+            else -> null
+        }
+        vlc.setAspectRatio(ratio)
+    }
+
     /** 解码类错误：能识别出 10bit H.265 时给出明确原因，否则附带编码信息 */
     private fun errorMessage(error: PlaybackException): String {
         val base = friendlyError(error)
@@ -441,6 +605,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun refresh(player: Player) {
+        // 兼容引擎接管后，Media3 的状态不再代表真实播放进度
+        if (usingVlc) return
         val audioTracks = mutableListOf<TrackOption>()
         val subtitleTracks = mutableListOf<TrackOption>()
         player.currentTracks.groups.forEach { group ->
@@ -518,6 +684,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         ticker?.cancel()
         ticker = viewModelScope.launch {
             while (isActive) {
+                if (usingVlc) {
+                    // 兼容引擎的进度由 VlcEngine 事件驱动，这里只负责定期存档
+                    tickCount++
+                    if (tickCount >= 10) {
+                        tickCount = 0
+                        if (_state.value.isPlaying) saveCurrentProgress()
+                    }
+                    delay(500)
+                    continue
+                }
                 val controller = player
                 if (controller != null) {
                     val duration = controller.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
@@ -543,6 +719,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun togglePlay() {
+        if (usingVlc) {
+            if (_state.value.isPlaying) {
+                vlc.pause()
+                saveCurrentProgress()
+            } else {
+                val s = _state.value
+                if (s.durationMs > 0 && s.positionMs >= s.durationMs - 500) vlc.seekTo(0)
+                vlc.resume()
+            }
+            return
+        }
         val controller = player ?: return
         if (controller.isPlaying) {
             controller.pause()
@@ -556,6 +743,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun seekTo(positionMs: Long) {
+        if (usingVlc) {
+            val duration = _state.value.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE
+            vlc.seekTo(positionMs.coerceIn(0L, duration))
+            return
+        }
         val controller = player ?: return
         val target = positionMs.coerceAtLeast(0L)
         controller.seekTo(target)
@@ -563,6 +755,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun seekBy(deltaMs: Long) {
+        if (usingVlc) {
+            val duration = _state.value.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE
+            vlc.seekTo((_state.value.positionMs + deltaMs).coerceIn(0L, duration))
+            return
+        }
         val controller = player ?: return
         val duration = controller.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: Long.MAX_VALUE
         val target = (controller.currentPosition + deltaMs).coerceIn(0L, duration)
@@ -571,6 +768,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun playNext() {
+        if (usingVlc) {
+            val next = _state.value.itemIndex + 1
+            if (next in entries.indices) playVlcIndex(next)
+            return
+        }
         val controller = player ?: return
         if (controller.hasNextMediaItem()) {
             controller.seekToNextMediaItem()
@@ -578,6 +780,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun playPrevious() {
+        if (usingVlc) {
+            val current = _state.value.itemIndex
+            if (_state.value.positionMs > 5_000) {
+                vlc.seekTo(0)
+            } else if (current - 1 in entries.indices) {
+                playVlcIndex(current - 1)
+            } else {
+                vlc.seekTo(0)
+            }
+            return
+        }
         val controller = player ?: return
         if (controller.currentPosition > 5_000) {
             controller.seekTo(0)
@@ -589,6 +802,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setSpeed(speed: Float) {
+        if (usingVlc) {
+            vlc.setRate(speed)
+            _state.update { it.copy(speed = speed) }
+            return
+        }
         player?.playbackParameters = PlaybackParameters(speed)
         _state.update { it.copy(speed = speed) }
     }
@@ -617,6 +835,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setAspectMode(mode: Int) {
         _state.update { it.copy(aspectMode = mode) }
+        applyVlcAspect(mode)
     }
 
     fun selectAudioTrack(index: Int) {
@@ -681,6 +900,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun retry() {
+        if (usingVlc) {
+            val entry = entries.getOrNull(_state.value.itemIndex) ?: return
+            val url = vlcUrl(entry) ?: return
+            _state.update { it.copy(error = null, isBuffering = true) }
+            vlc.play(url, _state.value.positionMs, _state.value.speed)
+            return
+        }
         val controller = player ?: return
         _state.update { it.copy(error = null) }
         controller.prepare()
@@ -688,20 +914,33 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun pauseAndSave() {
-        player?.pause()
+        if (usingVlc) vlc.pause() else player?.pause()
         saveCurrentProgress()
     }
 
     /** 恢复播放（从小窗回到全屏时使用） */
     fun resume() {
-        player?.play()
+        if (usingVlc) vlc.resume() else player?.play()
     }
+
+    /** 是否处于播放状态：兼容引擎下 Media3 是暂停的，不能只看 playWhenReady */
+    fun isActive(): Boolean = if (usingVlc) _state.value.isPlaying else player?.playWhenReady == true
 
     fun saveProgress() {
         saveCurrentProgress()
     }
 
     private fun saveCurrentProgress() {
+        if (usingVlc) {
+            val index = _state.value.itemIndex
+            val entry = entries.getOrNull(index) ?: return
+            val position = _state.value.positionMs
+            val duration = _state.value.durationMs.takeIf { it > 0 } ?: entry.durationMs
+            if (position > 0) {
+                HistoryRepository.record(entry.uri, entry.title, position, duration)
+            }
+            return
+        }
         val controller = player ?: return
         val item = controller.currentMediaItem ?: return
         val index = controller.currentMediaItemIndex
@@ -735,6 +974,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         player = null
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
+        vlcHolder.let { if (it.isInitialized()) it.value.release() }
         super.onCleared()
     }
 }

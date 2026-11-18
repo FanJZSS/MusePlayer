@@ -12,9 +12,11 @@ android {
         applicationId = "com.muse.player"
         minSdk = 24
         targetSdk = 34
-        versionCode = 85
-        versionName = "1.25.0"
+        versionCode = 86
+        versionName = "2.0.0"
         vectorDrawables { useSupportLibrary = true }
+        // libVLC 自带各 ABI 的原生库，限定常用架构以控制包体积
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
     signingConfigs {
@@ -97,6 +99,9 @@ dependencies {
     implementation("androidx.media3:media3-session:1.4.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // 第二播放引擎：Media3 解不出的格式（如 10bit H.265）交给 libVLC 软解
+    implementation("org.videolan.android:libvlc-all:3.6.0")
 
     // 局域网协议：SMB / FTP / WebDAV
     implementation("eu.agno3.jcifs:jcifs-ng:2.1.10")

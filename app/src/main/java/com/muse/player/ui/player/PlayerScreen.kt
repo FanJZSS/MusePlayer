@@ -131,6 +131,7 @@ import com.muse.player.R
 import com.muse.player.data.SettingsRepository
 import com.muse.player.util.SeekPreviewLoader
 import com.muse.player.util.formatDuration
+import org.videolan.libvlc.util.VLCVideoLayout
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -341,38 +342,55 @@ fun PlayerScreen(
                 }
             }
             if (state.connected) {
-                // 旋转画面时必须使用 TextureView：SurfaceView 无法应用旋转/缩放变换；
-                // 解码兜底重建播放器后画面输出需要重新绑定，因此也纳入 key
-                key(rotated, state.decoderRestart) {
-                    AndroidView(
-                        factory = { ctx ->
-                            val view = if (rotated) {
-                                LayoutInflater.from(ctx)
-                                    .inflate(R.layout.view_muse_player_texture, null) as PlayerView
-                            } else {
-                                PlayerView(ctx)
-                            }
-                            view.apply {
-                                useController = false
-                                setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                                setShutterBackgroundColor(android.graphics.Color.BLACK)
-                                player = viewModel.player
-                            }
-                        },
-                        update = { view ->
-                            view.player = viewModel.player
-                            // 固定比例（3 起）用拉伸填充，让画面真正变成该比例而不是只加黑边
-                            view.resizeMode = when {
-                                state.aspectMode >= 3 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                state.aspectMode == 1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                state.aspectMode == 2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            }
-                        },
-                        modifier = videoModifier
-                            .rotateSurface(surfaceRotation)
-                            .graphicsLayer(scaleX = zoom, scaleY = zoom)
-                    )
+                if (state.engine == 1) {
+                    // 兼容引擎（libVLC）自带画面输出布局
+                    key(rotated) {
+                        AndroidView(
+                            factory = { ctx ->
+                                VLCVideoLayout(ctx).also { view ->
+                                    view.keepScreenOn = true
+                                    viewModel.attachVlcView(view)
+                                }
+                            },
+                            modifier = videoModifier
+                                .rotateSurface(surfaceRotation)
+                                .graphicsLayer(scaleX = zoom, scaleY = zoom)
+                        )
+                    }
+                } else {
+                    // 旋转画面时必须使用 TextureView：SurfaceView 无法应用旋转/缩放变换；
+                    // 解码兜底重建播放器后画面输出需要重新绑定，因此也纳入 key
+                    key(rotated, state.decoderRestart) {
+                        AndroidView(
+                            factory = { ctx ->
+                                val view = if (rotated) {
+                                    LayoutInflater.from(ctx)
+                                        .inflate(R.layout.view_muse_player_texture, null) as PlayerView
+                                } else {
+                                    PlayerView(ctx)
+                                }
+                                view.apply {
+                                    useController = false
+                                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                                    setShutterBackgroundColor(android.graphics.Color.BLACK)
+                                    player = viewModel.player
+                                }
+                            },
+                            update = { view ->
+                                view.player = viewModel.player
+                                // 固定比例（3 起）用拉伸填充，让画面真正变成该比例而不是只加黑边
+                                view.resizeMode = when {
+                                    state.aspectMode >= 3 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                    state.aspectMode == 1 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                    state.aspectMode == 2 -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                    else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                }
+                            },
+                            modifier = videoModifier
+                                .rotateSurface(surfaceRotation)
+                                .graphicsLayer(scaleX = zoom, scaleY = zoom)
+                        )
+                    }
                 }
             } else {
                 androidx.compose.material3.CircularProgressIndicator(
