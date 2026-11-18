@@ -95,6 +95,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -159,8 +160,15 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var locked by remember { mutableStateOf(false) }
     var zoom by remember { mutableFloatStateOf(1f) }
-    // 切换视频后画面缩放回到默认倍数
-    LaunchedEffect(state.itemIndex) { zoom = 1f }
+    // 按视频分别记住缩放倍数：切走时存下当前值，切到这个视频时恢复它自己的值
+    val zoomByVideo = remember { mutableStateMapOf<String, Float>() }
+    var zoomKey by remember { mutableStateOf(state.currentUri) }
+    LaunchedEffect(state.currentUri) {
+        if (state.currentUri == zoomKey) return@LaunchedEffect
+        if (zoomKey.isNotEmpty()) zoomByVideo[zoomKey] = zoom
+        zoomKey = state.currentUri
+        zoom = zoomByVideo[state.currentUri] ?: 1f
+    }
     var gestureHint by remember { mutableStateOf<GestureHint?>(null) }
     var sliderValue by remember { mutableStateOf<Float?>(null) }
     var showSpeedSheet by remember { mutableStateOf(false) }

@@ -72,6 +72,8 @@ data class PlayerUiState(
     val subtitlesAvailable: Boolean = false,
     val itemIndex: Int = 0,
     val itemCount: Int = 0,
+    // 当前视频地址，播放页据此按视频分别保存缩放等画面状态
+    val currentUri: String = "",
     // 播放器实例因解码兜底被重建时递增，界面据此重新绑定画面输出
     val decoderRestart: Int = 0,
     // 0 = Media3（系统解码器），1 = libVLC（内置 FFmpeg 软解）
@@ -407,7 +409,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 itemCount = entries.size,
                 hasPrev = index > 0,
                 hasNext = index < entries.lastIndex,
-                title = entry.title
+                title = entry.title,
+                currentUri = entry.uri
             )
         }
         return true
@@ -427,6 +430,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 isBuffering = true,
                 hasPrev = index > 0,
                 hasNext = index < entries.lastIndex,
+                currentUri = entry.uri,
                 error = null
             )
         }
@@ -661,7 +665,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 subtitleTracks = subtitleTracks,
                 subtitlesAvailable = !textDisabled && subtitleTracks.any { it.selected },
                 itemIndex = player.currentMediaItemIndex,
-                itemCount = player.mediaItemCount
+                itemCount = player.mediaItemCount,
+                currentUri = player.currentMediaItem?.localConfiguration?.uri?.toString()
+                    ?: it.currentUri
             )
         }
     }
