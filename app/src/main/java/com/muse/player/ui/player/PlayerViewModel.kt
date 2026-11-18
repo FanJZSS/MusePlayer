@@ -325,7 +325,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         return true
     }
 
-    /** 解码类错误附带编码信息，便于判断是设备不支持还是数据问题 */
+    /** 解码类错误：能识别出 10bit H.265 时给出明确原因，否则附带编码信息 */
     private fun errorMessage(error: PlaybackException): String {
         val base = friendlyError(error)
         val decoding = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
@@ -333,12 +333,38 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (!decoding) return base
         val uri = player?.currentMediaItem?.localConfiguration?.uri?.toString()
         val softTried = uri != null && uri in softwareRetriedUris
+        val videoCodecs = videoCodecStrings()
+        // profile_idc 为 2 即 HEVC Main10（10bit），老/低端设备的硬解器往往只支持 8bit
+        if (videoCodecs.any { hevcProfileIdc(it) == 2 }) {
+            return buildString {
+                append("播放失败：该视频是 10bit H.265（Main10）")
+                append(if (softTried) "，软解也无法解码" else "，当前设备不支持此编码")
+                append("；请换用 8bit 版本或支持该格式的播放器")
+            }
+        }
         val codecs = codecSummary()
         return buildString {
             append(base)
             if (softTried) append("（已尝试软解）")
             if (codecs.isNotEmpty()) append("　编码：").append(codecs)
         }
+    }
+
+    /** 当前视频轨的 codecs 字符串，例如 hvc1.2.4.L120.90 */
+    private fun videoCodecStrings(): List<String> {
+        val p = player ?: return emptyList()
+        return p.currentTracks.groups
+            .filter { it.type == C.TRACK_TYPE_VIDEO }
+            .flatMap { group -> (0 until group.length).map { group.getTrackFormat(it) } }
+            .mapNotNull { it.codecs?.takeIf(String::isNotBlank) }
+    }
+
+    /** 解析 HEVC codecs 字符串中的 profile_idc，2 表示 Main10（10bit） */
+    private fun hevcProfileIdc(codecs: String): Int? {
+        val parts = codecs.split('.')
+        if (parts.size < 2) return null
+        if (parts[0] != "hvc1" && parts[0] != "hev1") return null
+        return parts[1].toIntOrNull()
     }
 
     /** 当前视频/音频轨的编码信息，例如 视频 video/hevc hvc1.2.4 */
