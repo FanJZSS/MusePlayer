@@ -37,15 +37,17 @@ jobs:
           mkdir -p out
           for f in app/build/outputs/apk/*/release/*.apk; do
             name=$(basename "$f" .apk)
-            prefix="MusePlayer"
-            abi=${name#app-lite-}
-            if [ "$abi" = "$name" ]; then
-              abi=${name#app-full-}
-            else
-              prefix="MusePlayer_Lite"
+            abi=${name#app-full-}
+            if [ "$abi" != "$name" ]; then
+              # 完整版带 libVLC 原生库，必须按 ABI 分发
+              abi=${abi%-release}
+              cp "$f" "out/MusePlayer_v${VERSION}_${abi}.apk"
+              continue
             fi
-            abi=${abi%-release}
-            cp "$f" "out/${prefix}_v${VERSION}_${abi}.apk"
+            # 轻量版不含原生库，各 ABI 产物内容相同，只保留一个通用包
+            if [ "$name" = "app-lite-arm64-v8a-release" ]; then
+              cp "$f" "out/MusePlayer_Lite_v${VERSION}.apk"
+            fi
           done
           ls -lh out
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"

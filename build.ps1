@@ -61,13 +61,13 @@ try {
             foreach ($apk in $apks) {
                 # app-full-arm64-v8a-release.apk / app-lite-arm64-v8a-release.apk
                 $name = $apk.BaseName -replace '-release$', ''
-                $isLite = $name -like 'app-lite-*'
-                $abi = $name -replace '^app-(full|lite)-', ''
-                $prefix = if ($isLite) { "MusePlayer_Lite" } else { "MusePlayer" }
-                $fileName = if ($abi) {
-                    "{0}_v{1}_{2}.apk" -f $prefix, $version, $abi
+                if ($name -like 'app-lite-*') {
+                    # 轻量版不含原生库，各 ABI 产物内容相同，只保留一个通用包
+                    if ($name -ne 'app-lite-arm64-v8a') { continue }
+                    $fileName = "MusePlayer_Lite_v{0}.apk" -f $version
                 } else {
-                    "{0}_v{1}.apk" -f $prefix, $version
+                    $abi = $name -replace '^app-full-', ''
+                    $fileName = "MusePlayer_v{0}_{1}.apk" -f $version, $abi
                 }
                 $target = Join-Path $root $fileName
                 Copy-Item $apk.FullName $target -Force
