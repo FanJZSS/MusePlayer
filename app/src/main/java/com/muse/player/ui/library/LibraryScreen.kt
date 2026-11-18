@@ -1018,13 +1018,12 @@ private fun RowScope.BottomNavItem(
             imageVector = tab.icon,
             contentDescription = tab.title,
             tint = color,
-            modifier = Modifier.size(22.dp)
+            modifier = Modifier.size(24.dp)
         )
-        Spacer(Modifier.height(2.dp))
         Text(
             text = tab.title,
             color = color,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
