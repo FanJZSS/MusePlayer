@@ -130,6 +130,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.muse.player.R
 import com.muse.player.data.SettingsRepository
+import com.muse.player.data.ZoomRepository
 import com.muse.player.util.SeekPreviewLoader
 import com.muse.player.util.formatDuration
 import org.videolan.libvlc.util.VLCVideoLayout
@@ -165,9 +166,26 @@ fun PlayerScreen(
     var zoomKey by remember { mutableStateOf(state.currentUri) }
     LaunchedEffect(state.currentUri) {
         if (state.currentUri == zoomKey) return@LaunchedEffect
-        if (zoomKey.isNotEmpty()) zoomByVideo[zoomKey] = zoom
+        if (zoomKey.isNotEmpty()) {
+            zoomByVideo[zoomKey] = zoom
+            ZoomRepository.put(zoomKey, zoom)
+        }
         zoomKey = state.currentUri
-        zoom = zoomByVideo[state.currentUri] ?: 1f
+        zoom = zoomByVideo[state.currentUri]
+            ?: ZoomRepository.get(state.currentUri)
+            ?: 1f
+    }
+    // 缩放停止变化后落盘，避免捏合过程中反复写磁盘
+    LaunchedEffect(zoom, zoomKey) {
+        if (zoomKey.isEmpty()) return@LaunchedEffect
+        delay(500)
+        ZoomRepository.put(zoomKey, zoom)
+    }
+    // 离开播放页时保存当前视频的缩放
+    DisposableEffect(Unit) {
+        onDispose {
+            if (zoomKey.isNotEmpty()) ZoomRepository.put(zoomKey, zoom)
+        }
     }
     var gestureHint by remember { mutableStateOf<GestureHint?>(null) }
     var sliderValue by remember { mutableStateOf<Float?>(null) }
