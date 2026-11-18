@@ -13,6 +13,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -992,6 +993,7 @@ private fun RowScope.BottomNavItem(
     onClick: () -> Unit
 ) {
     val active by remember { derivedStateOf { currentPage() == index } }
+    val interactionSource = remember { MutableInteractionSource() }
     val color = if (active) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -1001,7 +1003,14 @@ private fun RowScope.BottomNavItem(
         modifier = Modifier
             .weight(1f)
             .fillMaxHeight()
-            .selectable(selected = active, role = Role.Tab, onClick = onClick),
+            .selectable(
+                selected = active,
+                // 去掉水波纹：微信那种只靠图标/文字变色表示选中，少一层涟漪绘制
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
