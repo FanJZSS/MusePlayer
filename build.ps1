@@ -33,7 +33,7 @@ function Clear-JavaProcesses {
 $exitCode = 0
 try {
     Write-Host "==> Building release APK..." -ForegroundColor Cyan
-    & $gradlew :app:assembleRelease :app:lintRelease --console=plain
+    & $gradlew :app:assembleFullRelease :app:assembleLiteRelease :app:lintFullRelease :app:lintLiteRelease --console=plain
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Build failed (exit code $LASTEXITCODE)." -ForegroundColor Red
         $exitCode = $LASTEXITCODE
