@@ -131,8 +131,8 @@ object SettingsRepository {
     }
 
     fun setLongPressSpeed(value: Float) {
-        // 支持 2x / 2.5x / 3x / 3.5x / 4x，最低 2x
-        val safe = (kotlin.math.round(value * 2f) / 2f).coerceIn(2f, 4f)
+        // 支持 2x 到 8x，以 0.5x 为步进，最低 2x
+        val safe = (kotlin.math.round(value * 2f) / 2f).coerceIn(2f, 8f)
         sp.edit().putFloat("long_press_speed", safe).apply()
         _state.value = _state.value.copy(longPressSpeed = safe)
     }

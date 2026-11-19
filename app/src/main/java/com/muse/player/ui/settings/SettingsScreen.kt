@@ -299,11 +299,11 @@ private fun LongPressSpeedControl() {
             value = speed,
             onValueChange = { speed = (kotlin.math.round(it * 2f) / 2f) },
             onValueChangeFinished = { SettingsRepository.setLongPressSpeed(speed) },
-            valueRange = 2f..4f,
-            steps = 3
+            valueRange = 2f..8f,
+            steps = 11
         )
         Text(
-            text = "长按画面以所选倍速播放，松手恢复原速；默认 2x，最低 2x",
+            text = "长按画面以所选倍速播放，松手恢复原速；默认 2x，可选 2x–8x",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
