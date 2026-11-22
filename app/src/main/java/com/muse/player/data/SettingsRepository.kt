@@ -27,8 +27,41 @@ data class AppSettings(
     val decoderMode: Int = 0, // 0 自动（硬解优先+软解回退）, 1 强制软件解码, 2 强制硬件解码
     val repeatMode: Int = 0, // 0 顺序播放, 1 单曲循环, 2 列表循环
     val shuffleEnabled: Boolean = false, // 随机播放
-    val lowPerformanceMode: Boolean = false // 低性能模式：不加载视频缩略图
+    val lowPerformanceMode: Boolean = false, // 低性能模式：不加载视频缩略图
+    // 底部导航栏（窄屏底栏 / 宽屏侧栏）中显示的分栏，按显示顺序保存
+    val bottomNavTabs: List<Int> = listOf(
+        NavTabs.LIBRARY,
+        NavTabs.HISTORY,
+        NavTabs.BROWSE,
+        NavTabs.NETWORK
+    )
 )
+
+/**
+ * 分栏索引：0 媒体库, 1 历史, 2 浏览, 3 网络。
+ * 侧栏的「设置」入口不属于分栏，单独处理。
+ */
+object NavTabs {
+    const val LIBRARY = 0
+    const val HISTORY = 1
+    const val BROWSE = 2
+    const val NETWORK = 3
+
+    /** 所有分栏，索引即分栏序号 */
+    val ALL: List<Int> = listOf(LIBRARY, HISTORY, BROWSE, NETWORK)
+
+    fun title(tab: Int): String = when (tab) {
+        LIBRARY -> "媒体库"
+        HISTORY -> "历史"
+        BROWSE -> "浏览"
+        NETWORK -> "网络"
+        else -> ""
+    }
+
+    /** 过滤掉未知索引、去重并按 [ALL] 的顺序规范化 */
+    fun normalize(tabs: Collection<Int>): List<Int> =
+        ALL.filter { it in tabs }
+}
 
 object SettingsRepository {
     private const val PREFS = "muse_settings"
@@ -60,8 +93,20 @@ object SettingsRepository {
             decoderMode = sp.getInt("decoder_mode", 0),
             repeatMode = sp.getInt("repeat_mode", 0),
             shuffleEnabled = sp.getBoolean("shuffle_enabled", false),
-            lowPerformanceMode = sp.getBoolean("low_performance_mode", false)
+            lowPerformanceMode = sp.getBoolean("low_performance_mode", false),
+            bottomNavTabs = readBottomNavTabs()
         )
+    }
+
+    private fun readBottomNavTabs(): List<Int> {
+        // 未配置过（首次启动）时沿用默认的全部四个分栏
+        if (!sp.contains("bottom_nav_tabs")) {
+            return NavTabs.ALL
+        }
+        val saved = sp.getStringSet("bottom_nav_tabs", emptySet()) ?: emptySet()
+        val tabs = NavTabs.normalize(saved.mapNotNull { it.toIntOrNull() })
+        // 配置异常（全部失效）时回退到默认，避免导航栏彻底消失且无处可改
+        return tabs.ifEmpty { NavTabs.ALL }
     }
 
     fun setThemeMode(value: Int) {
@@ -177,4 +222,31 @@ object SettingsRepository {
         sp.edit().putBoolean("low_performance_mode", value).apply()
         _state.value = _state.value.copy(lowPerformanceMode = value)
     }
+
+    /**
+     * 设置导航栏中显示的分栏。
+     * 至少保留一个分栏，否则底栏/侧栏会连自身入口一起消失，用户再也无法从界面恢复。
+     */
+    fun setBottomNavTabVisible(tab: Int, visible: Boolean) {
+        if (tab !in NavTabs.ALL) return
+        val current = _state.value.bottomNavTabs
+        if ((tab in current) == visible) return
+
+        val updated = NavTabs.normalize(if (visible) current + tab else current - tab)
+        if (updated.isEmpty()) return
+
+        sp.edit()
+            .putStringSet("bottom_nav_tabs", updated.map { it.toString() }.toSet())
+            .apply()
+        _state.value = _state.value.copy(bottomNavTabs = updated)
+    }
+
+    fun resetBottomNavTabs() {
+        val defaults = NavTabs.ALL
+        sp.edit()
+            .putStringSet("bottom_nav_tabs", defaults.map { it.toString() }.toSet())
+            .apply()
+        _state.value = _state.value.copy(bottomNavTabs = defaults)
+    }
 }
+
