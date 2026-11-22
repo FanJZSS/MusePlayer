@@ -445,7 +445,7 @@ fun LibraryScreen(
                 LibraryBottomBar(
                     pagerState = pagerState,
                     tabs = visibleTabs,
-                    onSelect = selectTab
+                    onSelect = { tab -> selectTab(tab) }
                 )
             }
         },
@@ -460,7 +460,7 @@ fun LibraryScreen(
                 LibraryNavRail(
                     pagerState = pagerState,
                     tabs = visibleTabs,
-                    onSelect = selectTab,
+                    onSelect = { tab -> selectTab(tab) },
                     onSettings = { navController.navigate("settings") }
                 )
             }
@@ -501,170 +501,171 @@ fun LibraryScreen(
                 // 页码按可见分栏换算成分栏索引，关闭任意分栏后各页内容仍然对应正确
                 val tab = pageOfTab.getOrNull(page) ?: NavTabs.LIBRARY
                 when (tab) {
-                NavTabs.LIBRARY -> {
-                    val openFolder = openFolderId
-                    if (mediaMode == 1 && openFolder != null) {
-                        FolderContent(
-                            viewModel = viewModel,
-                            bucketId = openFolder,
-                            query = state.query,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else if (mediaMode == 1) {
-                        if (state.folders.isEmpty()) {
-                            EmptyState("没有文件夹", "视频会按照所在目录归入文件夹")
+                    NavTabs.LIBRARY -> {
+                        val openFolder = openFolderId
+                        if (mediaMode == 1 && openFolder != null) {
+                            FolderContent(
+                                viewModel = viewModel,
+                                bucketId = openFolder,
+                                query = state.query,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else if (mediaMode == 1) {
+                            if (state.folders.isEmpty()) {
+                                EmptyState("没有文件夹", "视频会按照所在目录归入文件夹")
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(vertical = 8.dp)
+                                ) {
+                                    items(state.folders, key = { it.bucketId }) { folder ->
+                                        FolderRow(
+                                            folder = folder,
+                                            onClick = {
+                                                viewModel.setQuery("")
+                                                openFolderId = folder.bucketId
+                                            },
+                                            hidden = folder.bucketId in state.hiddenFolderIds,
+                                            onLongClick = { actionFolder = folder }
+                                        )
+                                    }
+                                }
+                            }
+                        } else when {
+                            state.loading -> LoadingBox()
+                            state.videos.isEmpty() -> EmptyState(
+                                title = if (state.filterActive) "没有匹配的视频" else "媒体库为空",
+                                subtitle = if (state.filterActive) {
+                                    "试试其他关键词"
+                                } else {
+                                    "将视频拷贝到设备后，下拉刷新或重新扫描"
+                                }
+                            )
+
+                            state.grid -> LazyVerticalGrid(
+                                columns = if (wide) {
+                                    GridCells.Adaptive(200.dp)
+                                } else {
+                                    GridCells.Fixed(2)
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(state.videos, key = { it.id }) { video ->
+                                    VideoCard(
+                                        video = video,
+                                        progressMs = progressMap[video.uri.toString()] ?: 0L,
+                                        onClick = { playVideo(video, state.videos) },
+                                        onLongClick = { actionVideo = video }
+                                    )
+                                }
+                            }
+
+                            // 宽屏列表视图：多列排布，而不是拉成单列长条
+                            wide -> LazyVerticalGrid(
+                                columns = GridCells.Adaptive(360.dp),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(state.videos, key = { it.id }) { video ->
+                                    VideoRow(
+                                        video = video,
+                                        progressMs = progressMap[video.uri.toString()] ?: 0L,
+                                        onClick = { playVideo(video, state.videos) },
+                                        onLongClick = { actionVideo = video }
+                                    )
+                                }
+                            }
+
+                            else -> LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                items(state.videos, key = { it.id }) { video ->
+                                    VideoRow(
+                                        video = video,
+                                        progressMs = progressMap[video.uri.toString()] ?: 0L,
+                                        onClick = { playVideo(video, state.videos) },
+                                        onLongClick = { actionVideo = video }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    NavTabs.HISTORY -> {
+                        if (state.history.isEmpty()) {
+                            EmptyState("暂无播放记录", "播放过的视频会出现在这里")
                         } else {
+                            // 媒体库可能有几千条，建 uri 索引放到后台线程，
+                            // 避免滑动进入历史分栏的那一帧在主线程上做大量映射
+                            var videoByUri by remember {
+                                mutableStateOf<Map<String, VideoItem>>(emptyMap())
+                            }
+                            LaunchedEffect(state.videos) {
+                                val videos = state.videos
+                                videoByUri = withContext(Dispatchers.Default) {
+                                    videos.associateBy { it.uri.toString() }
+                                }
+                            }
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(vertical = 8.dp)
                             ) {
-                                items(state.folders, key = { it.bucketId }) { folder ->
-                                    FolderRow(
-                                        folder = folder,
-                                        onClick = {
-                                            viewModel.setQuery("")
-                                            openFolderId = folder.bucketId
-                                        },
-                                        hidden = folder.bucketId in state.hiddenFolderIds,
-                                        onLongClick = { actionFolder = folder }
-                                    )
-                                }
-                            }
-                        }
-                    } else when {
-                        state.loading -> LoadingBox()
-                        state.videos.isEmpty() -> EmptyState(
-                            title = if (state.filterActive) "没有匹配的视频" else "媒体库为空",
-                            subtitle = if (state.filterActive) {
-                                "试试其他关键词"
-                            } else {
-                                "将视频拷贝到设备后，下拉刷新或重新扫描"
-                            }
-                        )
-
-                        state.grid -> LazyVerticalGrid(
-                            columns = if (wide) {
-                                GridCells.Adaptive(200.dp)
-                            } else {
-                                GridCells.Fixed(2)
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(state.videos, key = { it.id }) { video ->
-                                VideoCard(
-                                    video = video,
-                                    progressMs = progressMap[video.uri.toString()] ?: 0L,
-                                    onClick = { playVideo(video, state.videos) },
-                                    onLongClick = { actionVideo = video }
-                                )
-                            }
-                        }
-
-                        // 宽屏列表视图：多列排布，而不是拉成单列长条
-                        wide -> LazyVerticalGrid(
-                            columns = GridCells.Adaptive(360.dp),
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 8.dp, horizontal = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(state.videos, key = { it.id }) { video ->
-                                VideoRow(
-                                    video = video,
-                                    progressMs = progressMap[video.uri.toString()] ?: 0L,
-                                    onClick = { playVideo(video, state.videos) },
-                                    onLongClick = { actionVideo = video }
-                                )
-                            }
-                        }
-
-                        else -> LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 8.dp)
-                        ) {
-                            items(state.videos, key = { it.id }) { video ->
-                                VideoRow(
-                                    video = video,
-                                    progressMs = progressMap[video.uri.toString()] ?: 0L,
-                                    onClick = { playVideo(video, state.videos) },
-                                    onLongClick = { actionVideo = video }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                NavTabs.HISTORY -> {
-                    if (state.history.isEmpty()) {
-                        EmptyState("暂无播放记录", "播放过的视频会出现在这里")
-                    } else {
-                        // 媒体库可能有几千条，建 uri 索引放到后台线程，
-                        // 避免滑动进入历史分栏的那一帧在主线程上做大量映射
-                        var videoByUri by remember {
-                            mutableStateOf<Map<String, VideoItem>>(emptyMap())
-                        }
-                        LaunchedEffect(state.videos) {
-                            val videos = state.videos
-                            videoByUri = withContext(Dispatchers.Default) {
-                                videos.associateBy { it.uri.toString() }
-                            }
-                        }
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 8.dp)
-                        ) {
-                            item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "${state.history.size} 条记录",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    TextButton(onClick = viewModel::clearHistory) {
-                                        Text("清空")
+                                item {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${state.history.size} 条记录",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(onClick = viewModel::clearHistory) {
+                                            Text("清空")
+                                        }
                                     }
                                 }
-                            }
-                            items(state.history, key = { it.uri }) { entry ->
-                                HistoryRow(
-                                    entry = entry,
-                                    video = videoByUri[entry.uri],
-                                    onClick = { playHistory(entry, videoByUri[entry.uri], context) },
-                                    onRemove = { viewModel.removeHistory(entry.uri) }
-                                )
+                                items(state.history, key = { it.uri }) { entry ->
+                                    HistoryRow(
+                                        entry = entry,
+                                        video = videoByUri[entry.uri],
+                                        onClick = { playHistory(entry, videoByUri[entry.uri], context) },
+                                        onRemove = { viewModel.removeHistory(entry.uri) }
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                NavTabs.BROWSE -> {
-                    BrowseTab(
-                        onPlay = { queue, index ->
-                            if (queue.isNotEmpty()) {
-                                val entries = queue.map { it.toPlayEntry() }
-                                val resume = if (SettingsRepository.state.value.autoResume) {
-                                    HistoryRepository.progressOf(
-                                        queue[index].uri.toString()
-                                    )
-                                } else {
-                                    0L
+                    NavTabs.BROWSE -> {
+                        BrowseTab(
+                            onPlay = { queue, index ->
+                                if (queue.isNotEmpty()) {
+                                    val entries = queue.map { it.toPlayEntry() }
+                                    val resume = if (SettingsRepository.state.value.autoResume) {
+                                        HistoryRepository.progressOf(
+                                            queue[index].uri.toString()
+                                        )
+                                    } else {
+                                        0L
+                                    }
+                                    PlayerLauncher.open(context, entries, index, resume)
                                 }
-                                PlayerLauncher.open(context, entries, index, resume)
                             }
-                        }
-                    )
-                }
+                        )
+                    }
 
-                else -> {
-                    NetworkTab(viewModel = networkViewModel)
+                    else -> {
+                        NetworkTab(viewModel = networkViewModel)
+                    }
                 }
             }
             }
