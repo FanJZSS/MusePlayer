@@ -48,6 +48,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.muse.player.BuildConfig
+import com.muse.player.data.NavTabs
 import com.muse.player.data.SettingsRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,6 +111,30 @@ fun SettingsScreen(navController: NavController) {
                     )
                 }
             }
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionTitle("底部导航栏")
+            // 只保留一个分栏时不能再关闭，否则导航栏会连自身入口一起消失
+            val lastTab = settings.bottomNavTabs.singleOrNull()
+            NavTabs.ALL.forEach { tab ->
+                val enabled = tab in settings.bottomNavTabs
+                SwitchRow(
+                    title = NavTabs.title(tab),
+                    subtitle = if (enabled && lastTab == tab) {
+                        "至少需要保留一个分栏，无法关闭"
+                    } else {
+                        "显示在底部导航栏（宽屏显示在左侧导航栏）"
+                    },
+                    checked = enabled,
+                    enabled = !(enabled && lastTab == tab),
+                    onCheckedChange = { SettingsRepository.setBottomNavTabVisible(tab, it) }
+                )
+            }
+            ActionRow(
+                title = "恢复默认导航栏",
+                subtitle = "重新显示媒体库、历史、浏览、网络四个分栏",
+                onClick = SettingsRepository::resetBottomNavTabs
+            )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("媒体库")
@@ -217,12 +242,13 @@ private fun SwitchRow(
     title: String,
     subtitle: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -230,14 +256,22 @@ private fun SwitchRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Text(title)
+            Text(
+                title,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    // 不可点击时整行变淡，提示该项当前不可更改
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                }
+            )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 
