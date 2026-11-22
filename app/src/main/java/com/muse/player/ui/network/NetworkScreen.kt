@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.muse.player.data.PlayEntry
+import com.muse.player.data.SettingsRepository
 import com.muse.player.data.network.DiscoveredServer
 import com.muse.player.data.network.NetworkRepository
 import com.muse.player.data.network.NetworkServer
@@ -687,8 +688,21 @@ private fun playRemote(
 ) {
     val videos = visibleEntries.filter { !it.isDirectory && NetworkRepository.isVideoFile(it.name) }
     if (videos.isEmpty()) return
-    val queue = videos.map {
-        PlayEntry(uri = it.uri, title = it.name, isNetwork = true)
+    // 自动加载同名字幕：目录条目已在浏览时取得，直接把字幕的 muse+ 地址带上，
+    // 播放器会复用与视频相同的数据源（含凭据与缓存）读取，无需额外请求
+    val autoSubtitles = SettingsRepository.state.value.autoSubtitles
+    val queue = videos.map { video ->
+        val subtitles = if (autoSubtitles) {
+            NetworkRepository.matchingSubtitles(video.name, visibleEntries).map { it.uri }
+        } else {
+            emptyList()
+        }
+        PlayEntry(
+            uri = video.uri,
+            title = video.name,
+            isNetwork = true,
+            subtitleFiles = subtitles
+        )
     }
     val index = videos.indexOfFirst { it.uri == clicked.uri }.coerceAtLeast(0)
     PlayerLauncher.open(context, queue, index, 0L)
