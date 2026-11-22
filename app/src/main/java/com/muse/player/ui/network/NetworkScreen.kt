@@ -670,7 +670,7 @@ private fun NetworkBrowserPanel(viewModel: NetworkViewModel, onExit: () -> Unit)
                                 if (entry.isDirectory) {
                                     viewModel.openFolder(entry)
                                 } else {
-                                    playRemote(context, visibleEntries, entry)
+                                    playRemote(context, visibleEntries, state.entries, entry)
                                 }
                             }
                         )
@@ -684,16 +684,19 @@ private fun NetworkBrowserPanel(viewModel: NetworkViewModel, onExit: () -> Unit)
 private fun playRemote(
     context: android.content.Context,
     visibleEntries: List<RemoteFile>,
+    allEntries: List<RemoteFile>,
     clicked: RemoteFile
 ) {
     val videos = visibleEntries.filter { !it.isDirectory && NetworkRepository.isVideoFile(it.name) }
     if (videos.isEmpty()) return
     // 自动加载同名字幕：目录条目已在浏览时取得，直接把字幕的 muse+ 地址带上，
-    // 播放器会复用与视频相同的数据源（含凭据与缓存）读取，无需额外请求
+    // 播放器会复用与视频相同的数据源（含凭据与缓存）读取，无需额外请求。
+    // 注意字幕文件不会出现在 visibleEntries 里（那里只保留了目录与视频），
+    // 必须从完整目录列表中匹配。
     val autoSubtitles = SettingsRepository.state.value.autoSubtitles
     val queue = videos.map { video ->
         val subtitles = if (autoSubtitles) {
-            NetworkRepository.matchingSubtitles(video.name, visibleEntries).map { it.uri }
+            NetworkRepository.matchingSubtitles(video.name, allEntries).map { it.uri }
         } else {
             emptyList()
         }
