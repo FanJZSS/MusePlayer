@@ -228,6 +228,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         val subtitlePaths = LinkedHashSet<String>()
+        // 本地视频按目录扫描同名字幕；网络视频的同名字幕在浏览目录时已经匹配好，
+        // 随 PlayEntry.subtitleFiles 带过来，这里统一合并
         if (!entry.isNetwork && SettingsRepository.state.value.autoSubtitles) {
             subtitlePaths += SubtitleFinder.findFor(entry.path)
         }
@@ -240,19 +242,49 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         return builder.build()
     }
 
+    /**
+     * 为字幕地址构造配置。支持两类来源：
+     * 1. 本地文件路径（媒体库 / 浏览页同目录字幕）；
+     * 2. 网络地址（muse+smb / muse+ftp / muse+webdav 或 http(s)），
+     *    由播放器的数据源统一读取，凭据不会写进 MediaItem。
+     */
     private fun subtitleConfig(path: String): MediaItem.SubtitleConfiguration? {
-        val file = File(path)
-        if (!file.exists()) return null
-        val mime = when (file.extension.lowercase()) {
+        val uri = Uri.parse(path)
+        val scheme = uri.scheme?.lowercase()
+        // 本地路径（或以 file:// 表示）按文件处理，其余视为网络地址。
+        // 注意：本地路径可能含 % 等字符，Uri.parse 会当成转义，因此本地分支用原始字符串
+        val remote = scheme != null && scheme != "file"
+
+        val fileName = if (remote) {
+            // Android 的 getLastPathSegment() 已做 URL 解码，可直接展示
+            uri.lastPathSegment ?: path
+        } else {
+            path.substringAfterLast('/')
+        }
+        val extension = fileName.substringAfterLast('.', "").lowercase()
+
+        val mime = when (extension) {
             "srt" -> MimeTypes.APPLICATION_SUBRIP
             "ass", "ssa" -> MimeTypes.TEXT_SSA
             "vtt" -> MimeTypes.TEXT_VTT
             "ttml", "dfxp" -> MimeTypes.APPLICATION_TTML
             else -> return null
         }
-        return MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
+
+        if (!remote) {
+            // 本地路径必须先确认存在，避免播放器对缺失文件反复报错
+            val file = File(path)
+            if (!file.exists()) return null
+            return MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
+                .setMimeType(mime)
+                .setLabel(file.name)
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
+        }
+
+        return MediaItem.SubtitleConfiguration.Builder(uri)
             .setMimeType(mime)
-            .setLabel(file.name)
+            .setLabel(fileName)
             .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
             .build()
     }
