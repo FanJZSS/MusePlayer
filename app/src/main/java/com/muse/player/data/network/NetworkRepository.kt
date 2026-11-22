@@ -28,6 +28,9 @@ object NetworkRepository {
         "mpg", "mpeg", "rmvb", "rm", "3gp", "ogv", "vob", "divx", "f4v", "asf", "mts"
     )
 
+    /** 与 SubtitleFinder 本地扫描保持一致的字幕扩展名 */
+    val SUBTITLE_EXTENSIONS = setOf("srt", "ass", "ssa", "vtt", "ttml", "dfxp")
+
     private lateinit var sp: SharedPreferences
     private val _servers = MutableStateFlow<List<NetworkServer>>(emptyList())
     val servers: StateFlow<List<NetworkServer>> = _servers.asStateFlow()
@@ -69,6 +72,30 @@ object NetworkRepository {
 
     fun isVideoFile(name: String): Boolean =
         name.substringAfterLast('.', "").lowercase() in VIDEO_EXTENSIONS
+
+    fun isSubtitleFile(name: String): Boolean =
+        name.substringAfterLast('.', "").lowercase() in SUBTITLE_EXTENSIONS
+
+    /**
+     * 从同一目录的条目中找出与视频同名的字幕。
+     *
+     * 规则与本地 [com.muse.player.data.SubtitleFinder] 一致：去掉扩展名后
+     * 以视频名开头即可（兼容 `movie.zh.srt`、`movie.en.ass` 这类语言后缀）。
+     * 目录列表在浏览时已经拿到，因此不需要为字幕额外发一次网络请求。
+     */
+    fun matchingSubtitles(videoName: String, entries: List<RemoteFile>): List<RemoteFile> {
+        val baseName = videoName.substringBeforeLast('.', videoName)
+        if (baseName.isBlank()) return emptyList()
+        return entries
+            .filter { !it.isDirectory && isSubtitleFile(it.name) }
+            .filter { entry ->
+                // 排除 ".srt" 这类没有文件名的条目：基名为空时 startsWith("") 恒为真
+                val entryBase = entry.name.substringBeforeLast('.', "")
+                entryBase.isNotBlank() && entryBase.startsWith(baseName, ignoreCase = true)
+            }
+            .sortedBy { it.name }
+            .take(8)
+    }
 
     /** 生成播放地址，形如 muse+smb://<serverId>/dir/movie.mkv */
     fun buildPlayUri(server: NetworkServer, relativePath: String): String {
