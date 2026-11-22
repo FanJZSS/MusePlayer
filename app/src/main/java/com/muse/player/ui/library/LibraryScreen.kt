@@ -116,6 +116,7 @@ import androidx.navigation.NavController
 import com.muse.player.data.FolderItem
 import com.muse.player.data.HistoryEntry
 import com.muse.player.data.HistoryRepository
+import com.muse.player.data.NavTabs
 import com.muse.player.data.PlayEntry
 import com.muse.player.data.SettingsRepository
 import com.muse.player.data.SortField
@@ -137,6 +138,8 @@ fun LibraryScreen(
     networkViewModel: NetworkViewModel
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // 导航栏显示哪些分栏由设置决定，关闭后底栏/侧栏立即同步
+    val settings by SettingsRepository.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -185,7 +188,10 @@ fun LibraryScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    if (!hasPermission && state.tab != 3) {
+    // 网络分栏不依赖视频读取权限，停在该分栏时不拦截未授权用户
+    val showingNetwork = state.tab == NavTabs.NETWORK &&
+        NavTabs.NETWORK in settings.bottomNavTabs
+    if (!hasPermission && !showingNetwork) {
         PermissionScreen(
             onRequest = {
                 permissionLauncher.launch(
@@ -194,7 +200,12 @@ fun LibraryScreen(
                 )
             },
             onOpenSettings = { openAppSettings(context) },
-            onBrowseNetwork = { viewModel.setTab(3) }
+            // 「浏览网络」会切到网络分栏；若用户已关闭该分栏，先重新打开再跳转
+            onBrowseNetwork = {
+                SettingsRepository.setBottomNavTabVisible(NavTabs.NETWORK, true)
+                viewModel.setTab(NavTabs.NETWORK)
+            },
+            onOpenAppPreferences = { navController.navigate("settings") }
         )
         return
     }
@@ -213,12 +224,23 @@ fun LibraryScreen(
 
     val tabs = remember {
         listOf(
-            LibraryTab("媒体库", Icons.Rounded.VideoLibrary),
-            LibraryTab("历史", Icons.Rounded.History),
-            LibraryTab("浏览", Icons.Rounded.FolderOpen),
-            LibraryTab("网络", Icons.Rounded.Dns)
+            LibraryTab(NavTabs.LIBRARY, "媒体库", Icons.Rounded.VideoLibrary),
+            LibraryTab(NavTabs.HISTORY, "历史", Icons.Rounded.History),
+            LibraryTab(NavTabs.BROWSE, "浏览", Icons.Rounded.FolderOpen),
+            LibraryTab(NavTabs.NETWORK, "网络", Icons.Rounded.Dns)
         )
     }
+    // 只展示用户开启的分栏。用 remember 缓存，滚动重组时不重复过滤，
+    // 也能保证推导出的陈列分栏与可见分栏的类型可被智能转换
+    val visibleTabs = remember(settings.bottomNavTabs) {
+        val visible = tabs.filter { it.id in settings.bottomNavTabs }
+        visible.ifEmpty { tabs }
+    }
+    // 分栏索引与页码解耦：底栏只渲染可见分栏，页码要按「可见分栏」换算
+    val pageOfTab = remember(visibleTabs) { visibleTabs.map { it.id } }
+    val tabOfPage = remember(visibleTabs) { visibleTabs.indices.associateBy { visibleTabs[it].id } }
+    val scope = rememberCoroutineScope()
+
     // 媒体库视图模式：0 = 视频，1 = 文件夹（持久化，下次打开保持上次选择）
     var mediaMode by rememberSaveable {
         mutableIntStateOf(if (SettingsRepository.state.value.folderViewMode) 1 else 0)
@@ -232,14 +254,32 @@ fun LibraryScreen(
     }
 
     val wide = LocalConfiguration.current.screenWidthDp >= 600
-    val pagerState = rememberPagerState(initialPage = state.tab) { tabs.size }
+    // 初始页取当前分栏在「可见分栏」中的位置；当前分栏已被关闭时从第一页开始
+    val initialPage = (tabOfPage[state.tab] ?: 0).coerceIn(0, visibleTabs.lastIndex)
+    val pagerState = rememberPagerState(initialPage = initialPage) { visibleTabs.size }
 
-    val scope = rememberCoroutineScope()
+    /** 切到某个分栏；该分栏已被关闭时忽略 */
+    fun selectTab(tab: Int) {
+        val page = tabOfPage[tab] ?: return
+        viewModel.setTab(tab)
+        scope.launch { pagerState.animateScrollToPage(page) }
+    }
 
     // 页码停稳后再同步 tab：滑动过程中写回状态会让整页重组，手势会掉帧
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }.collect { page ->
-            if (page != viewModel.state.value.tab) viewModel.setTab(page)
+            val tab = pageOfTab.getOrNull(page) ?: return@collect
+            if (tab != viewModel.state.value.tab) viewModel.setTab(tab)
+        }
+    }
+
+    // 用户关掉了当前所在的分栏（如在设置里关闭「历史」）时，
+    // 回到仍然可见的分栏，避免停留在已隐藏的页面上。
+    // 用最新状态判断，首次组合（例如关闭后冷启动）也能正确回退。
+    LaunchedEffect(visibleTabs) {
+        if (viewModel.state.value.tab !in tabOfPage) {
+            viewModel.setTab(visibleTabs.first().id)
+            pagerState.scrollToPage(0)
         }
     }
 
@@ -280,6 +320,13 @@ fun LibraryScreen(
                             if (showSearch) Icons.Rounded.Close else Icons.Rounded.Search,
                             contentDescription = "搜索"
                         )
+                    }
+                    // 宽屏侧栏自带设置入口；窄屏底栏没有设置项，只能从这里进入。
+                    // 没有这个入口，用户就无法再改回底部导航栏的开关。
+                    if (!wide) {
+                        IconButton(onClick = { navController.navigate("settings") }) {
+                            Icon(Icons.Rounded.Settings, contentDescription = "设置")
+                        }
                     }
                     Box {
                         IconButton(onClick = { showSortMenu = true }) {
@@ -397,11 +444,8 @@ fun LibraryScreen(
             if (!wide) {
                 LibraryBottomBar(
                     pagerState = pagerState,
-                    tabs = tabs,
-                    onSelect = { index ->
-                        viewModel.setTab(index)
-                        scope.launch { pagerState.animateScrollToPage(index) }
-                    }
+                    tabs = visibleTabs,
+                    onSelect = selectTab
                 )
             }
         },
@@ -415,11 +459,8 @@ fun LibraryScreen(
             if (wide) {
                 LibraryNavRail(
                     pagerState = pagerState,
-                    tabs = tabs,
-                    onSelect = { index ->
-                        viewModel.setTab(index)
-                        scope.launch { pagerState.animateScrollToPage(index) }
-                    },
+                    tabs = visibleTabs,
+                    onSelect = selectTab,
                     onSettings = { navController.navigate("settings") }
                 )
             }
@@ -457,8 +498,10 @@ fun LibraryScreen(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
-                when (page) {
-                0 -> {
+                // 页码按可见分栏换算成分栏索引，关闭任意分栏后各页内容仍然对应正确
+                val tab = pageOfTab.getOrNull(page) ?: NavTabs.LIBRARY
+                when (tab) {
+                NavTabs.LIBRARY -> {
                     val openFolder = openFolderId
                     if (mediaMode == 1 && openFolder != null) {
                         FolderContent(
@@ -553,7 +596,7 @@ fun LibraryScreen(
                     }
                 }
 
-                1 -> {
+                NavTabs.HISTORY -> {
                     if (state.history.isEmpty()) {
                         EmptyState("暂无播放记录", "播放过的视频会出现在这里")
                     } else {
@@ -602,7 +645,7 @@ fun LibraryScreen(
                     }
                 }
 
-                2 -> {
+                NavTabs.BROWSE -> {
                     BrowseTab(
                         onPlay = { queue, index ->
                             if (queue.isNotEmpty()) {
@@ -622,7 +665,6 @@ fun LibraryScreen(
 
                 else -> {
                     NetworkTab(viewModel = networkViewModel)
-                }
                 }
             }
             }
@@ -760,7 +802,9 @@ private fun LoadingBox() {
 private fun PermissionScreen(
     onRequest: () -> Unit,
     onOpenSettings: () -> Unit,
-    onBrowseNetwork: (() -> Unit)? = null
+    onBrowseNetwork: (() -> Unit)? = null,
+    // 该页面不显示底栏，需单独提供应用设置的入口来调整导航栏
+    onOpenAppPreferences: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -793,6 +837,11 @@ private fun PermissionScreen(
         if (onBrowseNetwork != null) {
             TextButton(onClick = onBrowseNetwork) {
                 Text("局域网浏览")
+            }
+        }
+        if (onOpenAppPreferences != null) {
+            TextButton(onClick = onOpenAppPreferences) {
+                Text("应用设置")
             }
         }
     }
@@ -913,7 +962,11 @@ private fun InfoLine(label: String, value: String) {
     }
 }
 
-private data class LibraryTab(val title: String, val icon: ImageVector)
+/**
+ * 分栏定义。id 是分栏索引（见 [NavTabs]），与页码无关：
+ * 用户关闭某些分栏后，底栏与页面都按「可见分栏」重新排布。
+ */
+private data class LibraryTab(val id: Int, val title: String, val icon: ImageVector)
 
 /**
  * 宽屏左侧导航栏。翻页进度只在这个组件内部读取，
@@ -928,7 +981,7 @@ private fun LibraryNavRail(
     onSelect: (Int) -> Unit,
     onSettings: () -> Unit
 ) {
-    val currentPage = { pagerState.currentPage }
+    val currentTab = { tabs.getOrNull(pagerState.currentPage)?.id }
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier
@@ -938,12 +991,12 @@ private fun LibraryNavRail(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(12.dp))
-            tabs.forEachIndexed { index, tab ->
+            tabs.forEach { tab ->
                 RailNavItem(
                     icon = tab.icon,
                     label = tab.title,
-                    activeProvider = { currentPage() == index },
-                    onClick = { onSelect(index) }
+                    activeProvider = { currentTab() == tab.id },
+                    onClick = { onSelect(tab.id) }
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -1005,13 +1058,12 @@ private fun LibraryBottomBar(
                 .height(56.dp)
                 .selectableGroup()
         ) {
-            val currentPage = { pagerState.currentPage }
-            tabs.forEachIndexed { index, tab ->
+            val currentTab = { tabs.getOrNull(pagerState.currentPage)?.id }
+            tabs.forEach { tab ->
                 BottomNavItem(
                     tab = tab,
-                    currentPage = currentPage,
-                    index = index,
-                    onClick = { onSelect(index) }
+                    currentTab = currentTab,
+                    onClick = { onSelect(tab.id) }
                 )
             }
         }
@@ -1021,11 +1073,10 @@ private fun LibraryBottomBar(
 @Composable
 private fun RowScope.BottomNavItem(
     tab: LibraryTab,
-    currentPage: () -> Int,
-    index: Int,
+    currentTab: () -> Int?,
     onClick: () -> Unit
 ) {
-    val active by remember { derivedStateOf { currentPage() == index } }
+    val active by remember { derivedStateOf { currentTab() == tab.id } }
     val interactionSource = remember { MutableInteractionSource() }
     val color = if (active) {
         MaterialTheme.colorScheme.primary
